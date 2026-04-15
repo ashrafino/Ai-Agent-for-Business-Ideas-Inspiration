@@ -1,6 +1,7 @@
 import { AGENTS, JUDGING_PANEL, runRound } from "./lib/groq.mjs";
 import { scrapeAllSources, formatScrapedDataForLLM } from "./lib/scraper.mjs";
 import { getCuratedLists, queryIdeas } from "./lib/idea-storage.mjs";
+import { verifyAuth } from "./lib/storage.mjs";
 
 /**
  * Build context from database + live scrape
