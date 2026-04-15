@@ -26,7 +26,8 @@ function buildCompactScrapeContext(scraped) {
   return lines.join("\n");
 }
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_API_URL    = "https://api.groq.com/openai/v1/chat/completions";
+const GEMINI_API_URL  = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
 // ── Model roster ─────────────────────────────────────────────────────────────
 // Groq free tier — ordered by capability/speed tradeoff
@@ -52,6 +53,14 @@ const OPENROUTER_MODELS = [
   { model: "microsoft/phi-3-mini-128k-instruct:free", ctx: 128000 },
   { model: "gryphe/mythomax-l2-13b:free",             ctx: 4096   }, 
   { model: "openrouter/auto",                         ctx: 8192   }, 
+];
+
+// Google Gemini — direct API, final high-quality fallback
+const GEMINI_MODELS = [
+  { model: "gemini-2.0-flash",          ctx: 1048576 }, // fast, 1M ctx, free quota
+  { model: "gemini-2.0-flash-lite",     ctx: 1048576 }, // even faster, free quota
+  { model: "gemini-1.5-flash",          ctx: 1048576 }, // proven stable fallback
+  { model: "gemini-1.5-flash-8b",       ctx: 1048576 }, // smallest/fastest
 ];
 
 // Models for diversity across judging panel
@@ -84,27 +93,26 @@ function buildAttemptQueue(preferredModel) {
   // Determine provider for preferred model
   const isPreferredGroq = GROQ_MODELS.some((m) => m.model === preferredModel);
   const isPreferredOR   = OPENROUTER_MODELS.some((m) => m.model === preferredModel);
+  const isPreferredGem  = GEMINI_MODELS.some((m) => m.model === preferredModel);
   
-  if (isPreferredGroq) {
-    add("groq", preferredModel);
-  } else if (isPreferredOR) {
-    add("openrouter", preferredModel);
-  } else {
-    // Default to Groq if unknown, but prioritize it first
-    add("groq", preferredModel);
-  }
+  if (isPreferredGroq)     add("groq",       preferredModel);
+  else if (isPreferredOR)  add("openrouter", preferredModel);
+  else if (isPreferredGem) add("gemini",     preferredModel);
+  else                     add("groq",       preferredModel);
 
-  // Then the rest of Groq, then OpenRouter
+  // Then the rest of Groq, then OpenRouter, then Gemini as final fallback
   for (const m of GROQ_MODELS)       add("groq",       m.model);
   for (const m of OPENROUTER_MODELS) add("openrouter", m.model);
+  for (const m of GEMINI_MODELS)     add("gemini",     m.model);
 
   console.log(`[Queue] Built attempt queue with ${queue.length} models: ${queue.map(q => q.model).join(", ")}`);
   return queue;
 }
 
 export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, model = MODELS.primary, netlifyContext = null } = {}) {
-  const groqKey = process.env.GROQ_API_KEY;
-  const orKey   = process.env.OPENROUTER_API_KEY;
+  const groqKey   = process.env.GROQ_API_KEY;
+  const orKey     = process.env.OPENROUTER_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
 
   // Local failure tracking — ensures every agent call starts with a full queue of potential models.
   const failedModels  = new Set();
@@ -124,11 +132,20 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
 
     console.log(`[Trying] ${provider} / ${currentModel}`);
     
-    const isGroq = provider === "groq";
-    const apiKey = isGroq ? groqKey : orKey;
-    const apiUrl = isGroq
-      ? GROQ_API_URL
-      : "https://openrouter.ai/api/v1/chat/completions";
+    const isGroq   = provider === "groq";
+    const isGemini = provider === "gemini";
+    let   apiKey, apiUrl;
+
+    if (isGroq) {
+      apiKey = groqKey;
+      apiUrl = GROQ_API_URL;
+    } else if (isGemini) {
+      apiKey = geminiKey;
+      apiUrl = GEMINI_API_URL;
+    } else {
+      apiKey = orKey;
+      apiUrl = "https://openrouter.ai/api/v1/chat/completions";
+    }
 
     if (!apiKey) { console.log(`[Skip] ${provider} - no API key configured`); continue; } // provider key not configured
 
@@ -155,7 +172,8 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type":  "application/json",
         };
-        if (!isGroq) {
+        // OpenRouter needs attribution headers
+        if (!isGroq && !isGemini) {
           headers["HTTP-Referer"] = "https://venturelens.app";
           headers["X-Title"]      = "VentureLens";
         }
@@ -227,21 +245,23 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
   }
 
   // Provide detailed error message showing what was tried
-  const triedModels = Array.from(failedModels).join(", ");
+  const triedModels    = Array.from(failedModels).join(", ");
   const triedProviders = Array.from(deadProviders).join(", ");
   
   let errorMsg = `All models exhausted. Tried ${failedModels.size} models${triedModels ? `: ${triedModels}` : ""}. Dead providers: ${triedProviders || "none"}. Last error: ${lastError?.message || "unknown"}`;
   
-  // Check if OpenRouter was the issue
   const openRouterFailed = Array.from(failedModels).some(m => m.includes("/") || m.includes(":free"));
-  const groqFailed = Array.from(failedModels).some(m => m.includes("llama") || m.includes("mixtral") || m.includes("gemma2"));
+  const groqFailed       = Array.from(failedModels).some(m => m.includes("llama") || m.includes("mixtral") || m.includes("gemma2"));
+  const geminiFailed     = Array.from(failedModels).some(m => m.includes("gemini"));
   
-  if (openRouterFailed && !groqFailed) {
-    errorMsg += "\n\nℹ️ OpenRouter API issue detected. Check that your OPENROUTER_API_KEY is valid and your account is properly set up at https://openrouter.ai/";
-  } else if (groqFailed && !openRouterFailed) {
-    errorMsg += "\n\nℹ️ Groq API issue detected. Check that your GROQ_API_KEY is valid or you may have hit rate limits.";
+  if (geminiFailed && groqFailed && openRouterFailed) {
+    errorMsg += "\n\nℹ️ All three providers (Groq, OpenRouter, Gemini) failed. Check your API keys and rate limits.";
   } else if (groqFailed && openRouterFailed) {
-    errorMsg += "\n\nℹ️ Both Groq and OpenRouter failed. This usually means rate limits or invalid API keys. Wait a few minutes and try again.";
+    errorMsg += "\n\nℹ️ Groq and OpenRouter failed — Gemini should have stepped in. Check GEMINI_API_KEY.";
+  } else if (openRouterFailed && !groqFailed) {
+    errorMsg += "\n\nℹ️ OpenRouter API issue. Check your OPENROUTER_API_KEY at https://openrouter.ai/";
+  } else if (groqFailed && !openRouterFailed) {
+    errorMsg += "\n\nℹ️ Groq API issue. Check your GROQ_API_KEY or you may have hit rate limits.";
   }
   
   throw new Error(errorMsg);

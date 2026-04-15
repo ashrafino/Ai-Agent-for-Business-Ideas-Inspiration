@@ -78,8 +78,8 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
 - [x] 5. Checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [-] 6. Implement `rate-limit.mjs` — Sliding-Window Rate Limiting
-  - [-] 6.1 Create `netlify/functions/lib/rate-limit.mjs` with `checkRateLimit(userId, ip)`
+- [x] 6. Implement `rate-limit.mjs` — Sliding-Window Rate Limiting
+  - [x] 6.1 Create `netlify/functions/lib/rate-limit.mjs` with `checkRateLimit(userId, ip)`
     - Reads `rate_limits` collection; prunes timestamps older than 60 min; if count >= 10 (authenticated) or >= 3 (unauthenticated/IP), returns `{ allowed: false, retryAfterSeconds: N }`; otherwise appends current timestamp and returns `{ allowed: true }`
     - On DB failure: fail open (allow request) and log warning
     - Must complete within 200 ms including MongoDB read + write
@@ -95,14 +95,14 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
     - Generate timestamp arrays spanning > 60 minutes; verify all remaining timestamps after pruning satisfy `timestamp >= Date.now() - 3_600_000`
     - **Validates: Requirements 7.3**
 
-- [~] 7. Implement `source-quality.mjs` — Source Quality Tracking
+- [x] 7. Implement `source-quality.mjs` — Source Quality Tracking
   - Create `netlify/functions/lib/source-quality.mjs` with `upsertSourceQuality(sourceName, metrics)`, `getSourceQuality(sourceName)`, `getAllSourceQuality()`, and `getCredibilityMultiplier(record)`
   - `upsertSourceQuality`: upserts `source_quality` collection with all required fields; increments `errorCount` on failure; logs console warning when `averageQualityScore < 20` for 3+ consecutive sessions
   - `getCredibilityMultiplier(record)`: returns `0.5` when `record.successRate < 0.5`, else `1.0`
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [~] 8. Implement `llm-formatter.mjs` — Personalized LLM Context Formatter
-  - [~] 8.1 Create `netlify/functions/lib/llm-formatter.mjs` with `formatForUser(rankedItems, userProfile)` and `formatFallback(scraped)`
+- [x] 8. Implement `llm-formatter.mjs` — Personalized LLM Context Formatter
+  - [x] 8.1 Create `netlify/functions/lib/llm-formatter.mjs` with `formatForUser(rankedItems, userProfile)` and `formatFallback(scraped)`
     - `formatForUser`: filters to items with `relevanceScore > 40`, caps at 60 items; groups by matched Interest_Domain with domain label headers; prepends "User Focus" section listing top-3 domains by weight when profile exists; truncates descriptions to 120 chars; includes `relevanceScore` and priority tier (`GOLD`/`HIGH`/`MEDIUM`) per item
     - `formatFallback`: delegates to existing `formatScrapedDataForLLM` from `scraper.mjs` for backward compatibility
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
@@ -117,10 +117,10 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
     - Generate strings of arbitrary length; verify each description as it appears in the formatted output has length `<= 120`
     - **Validates: Requirements 5.4**
 
-- [~] 9. Checkpoint — Ensure all tests pass
+- [x] 9. Checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [~] 10. Modify `scraper.mjs` — Reduce timeout and add per-source timing
+- [-] 10. Modify `scraper.mjs` — Reduce timeout and add per-source timing
   - Change `FETCH_TIMEOUT_MS` from `9000` to `4000`
   - In `fetchWithTimeout` (or each source function), record `startTime` before fetch and log `[Scraper] <sourceName>: <durationMs>ms <status>` after each source completes or fails
   - Return per-source timing/status data from `scrapeAllSources` so `source-quality.mjs` can consume it
