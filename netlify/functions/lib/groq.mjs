@@ -118,8 +118,8 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
 
   for (const { provider, model: currentModel } of queue) {
     // Skip models/providers already known to be broken this SPECIFIC call
-    if (failedModels.has(currentModel))    continue;
-    if (deadProviders.has(provider))       continue;
+    if (failedModels.has(currentModel))    { console.log(`[Skip] ${currentModel} - already failed`); continue; }
+    if (deadProviders.has(provider))       { console.log(`[Skip] ${provider} - provider dead`); continue; }
 
     const isGroq = provider === "groq";
     const apiKey = isGroq ? groqKey : orKey;
@@ -127,7 +127,7 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
       ? GROQ_API_URL
       : "https://openrouter.ai/api/v1/chat/completions";
 
-    if (!apiKey) continue; // provider key not configured
+    if (!apiKey) { console.log(`[Skip] ${provider} - no API key configured`); continue; } // provider key not configured
 
     for (let attempt = 0; attempt <= RATE_LIMIT.maxRetries; attempt++) {
       try {
@@ -223,7 +223,12 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
     }
   }
 
-  throw lastError || new Error("All models exhausted — no Groq or OpenRouter model succeeded.");
+  // Provide detailed error message showing what was tried
+  const triedModels = Array.from(failedModels).join(", ");
+  const triedProviders = Array.from(deadProviders).join(", ");
+  const errorMsg = `All models exhausted. Tried ${failedModels.size} models${triedModels ? `: ${triedModels}` : ""}. Dead providers: ${triedProviders || "none"}. Last error: ${lastError?.message || "unknown"}`;
+  
+  throw new Error(errorMsg);
 }
 
 export function delay(ms) {
