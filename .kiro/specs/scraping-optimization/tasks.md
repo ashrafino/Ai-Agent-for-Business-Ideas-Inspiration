@@ -120,31 +120,31 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
 - [x] 9. Checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [-] 10. Modify `scraper.mjs` — Reduce timeout and add per-source timing
+- [x] 10. Modify `scraper.mjs` — Reduce timeout and add per-source timing
   - Change `FETCH_TIMEOUT_MS` from `9000` to `4000`
   - In `fetchWithTimeout` (or each source function), record `startTime` before fetch and log `[Scraper] <sourceName>: <durationMs>ms <status>` after each source completes or fails
   - Return per-source timing/status data from `scrapeAllSources` so `source-quality.mjs` can consume it
   - _Requirements: 9.1, 9.5_
 
-- [~] 11. Modify `scraper-optimizer.mjs` — Add source credibility multiplier
+- [x] 11. Modify `scraper-optimizer.mjs` — Add source credibility multiplier
   - Import `getSourceQuality` and `getCredibilityMultiplier` from `source-quality.mjs`
   - In `filterAndRankPosts`, load the `Source_Quality_Record` for the current source and multiply each item's `_qualityScore` by `getCredibilityMultiplier(record)` before filtering
   - _Requirements: 6.3_
 
-- [~] 12. Create Netlify Function endpoints
-  - [~] 12.1 Create `netlify/functions/update-profile.mjs`
+- [x] 12. Create Netlify Function endpoints
+  - [x] 12.1 Create `netlify/functions/update-profile.mjs`
     - `POST /update-profile`: verify JWT via `verifyAuth`; validate body fields (`interestDomains`, `skillLevel`, `ideaSize`); call `saveProfile`; return `200` with saved profile or `400`/`500` on error
     - _Requirements: 1.1, 1.2, 1.5_
 
-  - [~] 12.2 Create `netlify/functions/submit-feedback.mjs`
+  - [x] 12.2 Create `netlify/functions/submit-feedback.mjs`
     - `POST /submit-feedback`: verify JWT; validate signal fields; call `recordFeedback` then `applyFeedbackToProfile`; return `200` on success, `500` with descriptive message on DB error
     - _Requirements: 3.1, 3.6_
 
-  - [~] 12.3 Create `netlify/functions/source-quality.mjs`
+  - [x] 12.3 Create `netlify/functions/source-quality.mjs`
     - `GET /source-quality`: verify JWT (authenticated users only); call `getAllSourceQuality()`; return array of records
     - _Requirements: 6.4_
 
-- [~] 13. Modify `scrape-preview.mjs` — Wire rate limiting, profile loading, and user cache
+- [-] 13. Modify `scrape-preview.mjs` — Wire rate limiting, profile loading, and user cache
   - Import `verifyAuth` from `storage.mjs`, `checkRateLimit` from `rate-limit.mjs`, `getProfile` / `getDefaultWeights` from `user-profile.mjs`, `getUserCache` / `setUserCache` / `rankItemsForUser` from `relevance.mjs`, `formatForUser` / `formatFallback` from `llm-formatter.mjs`, and `upsertSourceQuality` from `source-quality.mjs`
   - Add domain filter support: read `domains[]` from request body; validate against `INTEREST_DOMAINS`; return `400` for unknown values; apply Optimizer domain filter (threshold 30, fallback to 10 if < 5 items pass)
   - Implement the full request flow from the design §Request Flow: auth → rate limit → load profile → check user cache → (on miss) score + cache → format → return

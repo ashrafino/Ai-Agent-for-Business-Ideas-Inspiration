@@ -5,6 +5,8 @@
  * high-quality startup ideas are consistently fed to the AI analysis pipeline.
  */
 
+import { getSourceQuality, getCredibilityMultiplier } from "./source-quality.mjs";
+
 // ── Scoring Weights ───────────────────────────────────────────────────────────
 const WEIGHTS = {
   // Signal strength multipliers
@@ -389,7 +391,7 @@ function categorizePriority(qualityScore) {
 }
 
 // ── Batch Processing ─────────────────────────────────────────────────────────
-export function optimizeScrapeResults(scraped) {
+export async function optimizeScrapeResults(scraped) {
   console.log("[Optimizer] Starting intelligent content filtering...");
   const startTime = Date.now();
   
@@ -401,52 +403,52 @@ export function optimizeScrapeResults(scraped) {
   
   // Process each source
   if (scraped.hackerNews?.posts) {
-    optimized.hackerNews.posts = filterAndRankPosts(scraped.hackerNews.posts, "hackernews");
+    optimized.hackerNews.posts = await filterAndRankPosts(scraped.hackerNews.posts, "hackernews");
   }
   if (scraped.hackerNewsAsk?.posts) {
-    optimized.hackerNewsAsk.posts = filterAndRankPosts(scraped.hackerNewsAsk.posts, "hackernews-ask");
+    optimized.hackerNewsAsk.posts = await filterAndRankPosts(scraped.hackerNewsAsk.posts, "hackernews-ask");
   }
   if (scraped.reddit?.posts) {
-    optimized.reddit.posts = filterAndRankPosts(scraped.reddit.posts, "reddit");
+    optimized.reddit.posts = await filterAndRankPosts(scraped.reddit.posts, "reddit");
   }
   if (scraped.productHunt?.posts) {
-    optimized.productHunt.posts = filterAndRankPosts(scraped.productHunt.posts, "producthunt");
+    optimized.productHunt.posts = await filterAndRankPosts(scraped.productHunt.posts, "producthunt");
   }
   if (scraped.indieHackers?.posts) {
-    optimized.indieHackers.posts = filterAndRankPosts(scraped.indieHackers.posts, "indiehackers");
+    optimized.indieHackers.posts = await filterAndRankPosts(scraped.indieHackers.posts, "indiehackers");
   }
   if (scraped.devTo?.posts) {
-    optimized.devTo.posts = filterAndRankPosts(scraped.devTo.posts, "devto");
+    optimized.devTo.posts = await filterAndRankPosts(scraped.devTo.posts, "devto");
   }
   if (scraped.betaList?.posts) {
-    optimized.betaList.posts = filterAndRankPosts(scraped.betaList.posts, "betalist");
+    optimized.betaList.posts = await filterAndRankPosts(scraped.betaList.posts, "betalist");
   }
   if (scraped.lobsters?.posts) {
-    optimized.lobsters.posts = filterAndRankPosts(scraped.lobsters.posts, "lobsters");
+    optimized.lobsters.posts = await filterAndRankPosts(scraped.lobsters.posts, "lobsters");
   }
   if (scraped.appSumo?.posts) {
-    optimized.appSumo.posts = filterAndRankPosts(scraped.appSumo.posts, "appsumo");
+    optimized.appSumo.posts = await filterAndRankPosts(scraped.appSumo.posts, "appsumo");
   }
   if (scraped.starterStory?.posts) {
-    optimized.starterStory.posts = filterAndRankPosts(scraped.starterStory.posts, "starterstory");
+    optimized.starterStory.posts = await filterAndRankPosts(scraped.starterStory.posts, "starterstory");
   }
   
   // GitHub repos
   if (scraped.githubTrending?.repos) {
-    optimized.githubTrending.repos = filterAndRankPosts(scraped.githubTrending.repos, "github");
+    optimized.githubTrending.repos = await filterAndRankPosts(scraped.githubTrending.repos, "github");
   }
   
   // YC companies
   if (scraped.ycombinator?.companies) {
-    optimized.ycombinator.companies = filterAndRankPosts(scraped.ycombinator.companies, "yc");
+    optimized.ycombinator.companies = await filterAndRankPosts(scraped.ycombinator.companies, "yc");
   }
   
   // Custom sources
   if (scraped.custom) {
-    optimized.custom = scraped.custom.map(customSource => ({
+    optimized.custom = await Promise.all(scraped.custom.map(async customSource => ({
       ...customSource,
-      posts: filterAndRankPosts(customSource.posts || [], "custom"),
-    }));
+      posts: await filterAndRankPosts(customSource.posts || [], "custom"),
+    })));
   }
   
   const duration = Date.now() - startTime;
@@ -459,21 +461,26 @@ export function optimizeScrapeResults(scraped) {
   return optimized;
 }
 
-function filterAndRankPosts(posts, source) {
+async function filterAndRankPosts(posts, source) {
   if (!Array.isArray(posts) || posts.length === 0) return posts;
-  
+
+  // Load source quality record once for the whole batch
+  const sourceRecord = await getSourceQuality(source);
+  const credibilityMultiplier = sourceRecord ? getCredibilityMultiplier(sourceRecord) : 1.0;
+
   // Analyze each post
   const analyzed = posts.map(post => {
+    const itemSource = post.source || source;
     const text = `${post.title || ""} ${post.description || ""} ${post.tagline || ""}`;
     const analysis = analyzeContent(text, {
       ...post,
-      source,
+      source: itemSource,
     });
-    
+
     return {
       ...post,
       _analysis: analysis,
-      _qualityScore: analysis.qualityScore,
+      _qualityScore: analysis.qualityScore * credibilityMultiplier,
       _priority: analysis.priority,
     };
   });

@@ -6,8 +6,9 @@
 // ============================================
 // Configuration
 // ============================================
-const API_BASE = "/api";
+const API_BASE     = "/api";
 const TOTAL_ROUNDS = 9;
+const ADMIN_EMAIL  = "achrafbach1@gmail.com";
 
 // ============================================
 // Auth State Management
@@ -37,12 +38,18 @@ const Auth = {
     return !!this.token;
   },
 
+  isAdmin() {
+    return this.user?.email === ADMIN_EMAIL;
+  },
+
   updateUI() {
-    const overlay = $("#auth-overlay");
-    const headerUser = $("#header-user");
+    const overlay     = $("#auth-overlay");
+    const headerUser  = $("#header-user");
     const mainContent = $("#main-content");
-    const mainHeader = $("#main-header");
-    const footer = $("footer");
+    const mainHeader  = $("#main-header");
+    const footer      = $("footer");
+    const btnRun      = $("#btn-run-analysis");
+    const btnRunWrap  = $("#action-bar-run-wrap"); // optional wrapper
 
     if (this.isAuthenticated()) {
       overlay.style.display = "none";
@@ -54,6 +61,11 @@ const Auth = {
       mainContent.style.pointerEvents = "auto";
       mainHeader.style.opacity = "1";
       footer.style.opacity = "1";
+
+      // Show Run Analysis button ONLY for admin
+      if (btnRun) {
+        btnRun.style.display = this.isAdmin() ? "inline-flex" : "none";
+      }
     } else {
       overlay.style.display = "flex";
       headerUser.style.display = "none";

@@ -192,8 +192,17 @@ export const handler = async (event, context) => {
     // 🔒 Enforce Authentication
     const user = verifyAuth(event);
     
+    // 🔑 Admin-only gate
+    if (user.email !== "achrafbach1@gmail.com") {
+      return {
+        statusCode: 403,
+        headers,
+        body: JSON.stringify({ error: "Only the admin can run analysis." }),
+      };
+    }
+
     const { round, context: debateHistory } = JSON.parse(event.body);
-    console.log(`[VentureLens] Authorized debate round ${round} for ${user.email}`);
+    console.log(`[VentureLens] Admin debate round ${round} for ${user.email}`);
 
     const config = ROUND_CONFIG[round];
 

@@ -1,10 +1,11 @@
 import { update, verifyAuth } from "./lib/storage.mjs";
 import { runFullDebate } from "./lib/groq.mjs";
 
+const ADMIN_EMAIL = "achrafbach1@gmail.com";
+
 /**
  * POST /api/trigger-analysis
- * Manual trigger to run a full 9-round analysis from the UI.
- * Saves results through the shared storage module (same as scheduled-analysis).
+ * Admin-only: starts a 9-round debate and saves results globally for all users.
  */
 export const handler = async (event, context) => {
   const headers = {
@@ -23,44 +24,52 @@ export const handler = async (event, context) => {
   try {
     // 🔒 Enforce Authentication
     const user = verifyAuth(event);
-    console.log(`[VentureLens] Authorized analysis trigger for ${user.email}`);
+
+    // 🔑 Admin-only gate
+    if (user.email !== ADMIN_EMAIL) {
+      console.warn(`[VentureLens] Unauthorized analysis attempt by ${user.email}`);
+      return {
+        statusCode: 403,
+        headers,
+        body: JSON.stringify({ error: "Only the admin can trigger analysis." }),
+      };
+    }
+
+    console.log(`[VentureLens] Admin analysis trigger for ${user.email}`);
 
     const result = await runFullDebate({ netlifyContext: context });
-    const today = new Date().toISOString().slice(0, 10);
+    const today  = new Date().toISOString().slice(0, 10);
 
+    // Save to global "main" — results visible to all authenticated users
     await update((db) => {
-      // 1. Save as latest
       db.latest = {
-        id: result.id,
+        id:        result.id,
         timestamp: result.timestamp,
-        status: "complete",
-        phases: result.phases,
-        ideas: result.ideas,
+        status:    "complete",
+        phases:    result.phases,
+        ideas:     result.ideas,
       };
 
-      // 2. Update history (max 50, no duplicates)
       if (!db.history) db.history = [];
       if (!db.history.find((h) => h.id === result.id)) {
         db.history.unshift({
-          id: result.id,
+          id:        result.id,
           timestamp: result.timestamp,
           ideaCount: result.ideas.length,
-          topIdea: result.ideas[0]?.name || "Unknown",
-          topTier: result.ideas[0]?.tier || "?",
-          topScore: result.ideas[0]?.compositeScore || 0,
+          topIdea:   result.ideas[0]?.name          || "Unknown",
+          topTier:   result.ideas[0]?.tier          || "?",
+          topScore:  result.ideas[0]?.compositeScore || 0,
         });
         db.history = db.history.slice(0, 50);
       }
 
-      // 3. Accumulate today's ideas
       if (db.todayDate !== today) {
         db.todayIdeas = [];
-        db.todayDate = today;
+        db.todayDate  = today;
       }
       if (!db.todayIdeas) db.todayIdeas = [];
       db.todayIdeas.push(...result.ideas);
 
-      // 4. Build Best-of-Day (deduplicate by name, top 10 by score)
       const ideaMap = new Map();
       for (const idea of db.todayIdeas) {
         const key = (idea.name || "").toLowerCase().trim();
@@ -75,17 +84,17 @@ export const handler = async (event, context) => {
         .map((idea, i) => ({ ...idea, dayRank: i + 1 }));
 
       db.bestOfDay = {
-        date: today,
-        ideas: ranked,
+        date:               today,
+        ideas:              ranked,
         totalIdeasAnalyzed: db.todayIdeas.length,
-        uniqueIdeas: ideaMap.size,
-        totalRuns: db.history.filter((h) => h.timestamp?.startsWith(today)).length,
-        topScore: ranked[0]?.compositeScore || 0,
-        generatedAt: new Date().toISOString(),
+        uniqueIdeas:        ideaMap.size,
+        totalRuns:          db.history.filter((h) => h.timestamp?.startsWith(today)).length,
+        topScore:           ranked[0]?.compositeScore || 0,
+        generatedAt:        new Date().toISOString(),
       };
 
       return db;
-    }, user.id);
+    }); // no userId → global "main"
 
     return {
       statusCode: 200,
