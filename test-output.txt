@@ -1,0 +1,58 @@
+✓ Loaded environment variables from .env file
+
+============================================================
+ProductHunt API Integration Test
+============================================================
+
+Credentials Check:
+  PRODUCTHUNT_CLIENT_ID: ✓ Set
+  PRODUCTHUNT_CLIENT_SECRET: ✓ Set
+
+Starting scrape...
+
+[Scraper] Starting scraping (isSubRound=false, custom=0)...
+[Scraper] DEV.to: 10
+[Scraper] ProductHunt token acquired (valid for 24h)
+[Scraper] GitHub Trending HTML: 1
+[Scraper] HN Show: 25
+[Scraper] HN Ask: 0
+[Scraper] YC: 0
+[Scraper] Indie Hackers: 0
+[Scraper] Product Hunt RSS: 0
+[Scraper] Reddit RSS fallback: 0
+[Scraper] Lobsters: 0
+[Scraper] Complete: 36 items in 1663ms
+[Optimizer] Starting intelligent content filtering...
+[Optimizer] hackernews: 25 posts (🥇25 🥈0 🥉0)
+[Optimizer] devto: 10 posts (🥇7 🥈3 🥉0)
+[Optimizer] github: 1 posts (🥇0 🥈1 🥉0)
+[Optimizer] Complete: 36 → 36 items (8ms)
+[Optimizer] Filtered out 0 low-quality items
+[Scraper] Optimization: 36 → 36 high-quality items
+============================================================
+Scrape Results
+============================================================
+
+Duration: 1673ms (1.67s)
+Scraped at: 2026-04-15T16:07:43.283Z
+
+ProductHunt Source: Product Hunt RSS
+ProductHunt Posts: 0
+
+⚠ No ProductHunt posts found
+
+All Sources Summary:
+------------------------------------------------------------
+  Hacker News: 25
+  Hacker News Ask: 0
+  Reddit: 0
+  Product Hunt: 0
+  Indie Hackers: 0
+  GitHub Trending: 1
+  Y Combinator: 0
+  DEV.to: 10
+  BetaList: 0
+  Lobsters: 0
+  AppSumo: 0
+  Starter Story: 0
+

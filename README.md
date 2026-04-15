@@ -42,7 +42,10 @@ VentureLens now uses ProductHunt API for richer startup data. See [PRODUCTHUNT_A
 - **Backend**: Netlify Functions (ESM, Node 20) in `netlify/functions/`
 - **Storage**: Netlify Blobs (zero-config, built into every Netlify site)
 - **LLM**: Groq API (primary) + OpenRouter (fallback)
-- **Scraping**: 12 sources — HN, Reddit OAuth, Product Hunt, Indie Hackers, GitHub, DEV.to, BetaList, Lobsters, AppSumo, YC W25, Google Trends, Exploding Topics
+- **Scraping**: 12 sources with intelligent NLP-powered optimization
+  - Sources: HN, Reddit OAuth, Product Hunt API, Indie Hackers, GitHub, DEV.to, BetaList, Lobsters, AppSumo, YC W25, Google Trends, Starter Story
+  - **NEW**: Advanced content filtering using keyword scoring, engagement metrics, and quality analysis
+  - Automatically filters spam and prioritizes validated opportunities (see [SCRAPER_OPTIMIZATION.md](SCRAPER_OPTIMIZATION.md))
 
 ## Scheduled Jobs
 

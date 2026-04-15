@@ -1,6 +1,7 @@
 import { getStore } from "@netlify/blobs";
 import { load as loadHtml } from "cheerio";
 import { saveScrapeToDB } from "./storage.mjs";
+import { optimizeScrapeResults, formatOptimizedForLLM } from "./scraper-optimizer.mjs";
 
 const FETCH_TIMEOUT_MS = 9000;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -116,7 +117,26 @@ const PAIN_POINT_KEYWORDS = [
   "problem", "looking for"
 ];
 
-const PH_TAG_HINTS = ["saas", "productivity", "ai", "automation", "developer", "no-code", "api", "extension", "tool", "app"];
+const PH_TAG_HINTS = [
+  // Core startup/business
+  "saas", "b2b", "b2c", "startup", "business", "enterprise",
+  
+  // Productivity & tools
+  "productivity", "automation", "tool", "app", "software", "platform",
+  
+  // Developer tools
+  "developer", "api", "sdk", "no-code", "low-code", "code", "github",
+  
+  // Tech categories
+  "ai", "artificial intelligence", "machine learning", "analytics",
+  "marketing", "sales", "crm", "project management",
+  
+  // Extensions & integrations
+  "extension", "chrome", "plugin", "integration", "workflow",
+  
+  // Business models
+  "subscription", "freemium", "marketplace", "community"
+];
 const IH_VALIDATION_HINTS = ["launched", "$", "mrr", "customers", "revenue", "profit", "profitable", "bootstrapped", "users"];
 const TREND_HINTS = ["software", "app", "tool", "saas", "ai", "api", "platform", "automation", "remote", "tech"];
 
@@ -219,10 +239,15 @@ export async function scrapeAllSources({ isSubRound = false, customSources = [] 
   const total = countTotal(scraped);
   console.log(`[Scraper] Complete: ${total} items in ${scraped.durationMs}ms`);
   
+  // ── APPLY INTELLIGENT OPTIMIZATION ────────────────────────────────────────
+  const optimized = optimizeScrapeResults(scraped);
+  const optimizedTotal = countTotal(optimized);
+  console.log(`[Scraper] Optimization: ${total} → ${optimizedTotal} high-quality items`);
+  
   // Persist raw data to MongoDB data lake (even if some sources failed)
   try {
-    await saveScrapeToDB(scraped);
-    console.log("[Scraper] Raw data persisted to MongoDB");
+    await saveScrapeToDB(optimized);
+    console.log("[Scraper] Optimized data persisted to MongoDB");
   } catch (err) {
     console.error("[Scraper] Failed to persist raw data:", {
       error: err.message,
@@ -234,7 +259,7 @@ export async function scrapeAllSources({ isSubRound = false, customSources = [] 
   // Cache the results (only for non-custom scrapes)
   if (customSources.length === 0) {
     try {
-      await saveToCache(scraped);
+      await saveToCache(optimized);
     } catch (err) {
       console.error("[Scraper] Failed to save cache:", {
         error: err.message,
@@ -244,7 +269,7 @@ export async function scrapeAllSources({ isSubRound = false, customSources = [] 
     }
   }
   
-  return scraped;
+  return optimized;
 }
 
 function countTotal(scraped) {
@@ -505,8 +530,9 @@ async function getProductHuntToken() {
     }
 
     _productHuntToken = data.access_token;
-    _productHuntTokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
-    console.log(`[Scraper] ProductHunt token acquired (expires in ${data.expires_in}s)`);
+    // ProductHunt tokens don't have expires_in, cache for 24 hours
+    _productHuntTokenExpiry = Date.now() + (24 * 60 * 60 * 1000);
+    console.log(`[Scraper] ProductHunt token acquired (valid for 24h)`);
     return _productHuntToken;
   } catch (err) {
     console.error("[Scraper] ProductHunt OAuth failed:", {
@@ -530,12 +556,13 @@ async function scrapeProductHunt() {
 
 async function scrapeProductHuntAPI(token) {
   try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    // Expanded to 14 days for more coverage
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
-    // GraphQL query to fetch posts from last 7 days
+    // GraphQL query - reduced to 50 posts to stay under complexity limit
     const query = `
       query {
-        posts(order: VOTES, postedAfter: "${sevenDaysAgo}", first: 50) {
+        posts(order: VOTES, postedAfter: "${fourteenDaysAgo}", first: 50) {
           edges {
             node {
               id
@@ -590,7 +617,7 @@ async function scrapeProductHuntAPI(token) {
     
     if (data.errors) {
       console.error("[Scraper] ProductHunt GraphQL errors:", {
-        errors: data.errors,
+        errors: JSON.stringify(data.errors),
         timestamp: new Date().toISOString(),
       });
       return scrapeProductHuntRss();
@@ -615,13 +642,23 @@ async function scrapeProductHuntAPI(token) {
           source: "producthunt-api",
         };
       })
-      .filter((p) => p.upvotes > 50) // Filter for high-quality posts
       .filter((p) => {
-        // Filter by relevant topics or keywords
-        const text = `${p.title} ${p.description} ${p.topics.join(" ")}`.toLowerCase();
-        return PH_TAG_HINTS.some(hint => text.includes(hint));
+        // More lenient upvote threshold for better coverage
+        if (p.upvotes < 30) return false;
+        
+        // Check if post is relevant by topics or keywords
+        const text = `${p.title} ${p.description} ${p.tagline} ${p.topics.join(" ")}`.toLowerCase();
+        
+        // Must match at least one relevant keyword
+        const hasRelevantKeyword = PH_TAG_HINTS.some(hint => text.includes(hint.toLowerCase()));
+        
+        // Boost posts with strong startup signals
+        const hasStrongSignal = STARTUP_KEYWORDS.some(kw => text.includes(kw.toLowerCase()));
+        
+        return hasRelevantKeyword || hasStrongSignal;
       })
-      .slice(0, 25);
+      .sort((a, b) => b.upvotes - a.upvotes) // Sort by upvotes
+      .slice(0, 40); // Increased from 25 to 40 for more coverage
 
     console.log(`[Scraper] Product Hunt API: ${posts.length} posts`);
     return { posts, source: "Product Hunt API" };
@@ -935,6 +972,12 @@ async function scrapeYCombinator() {
 
 // ── Format for LLM ────────────────────────────────────────────────────────────
 export function formatScrapedDataForLLM(scraped) {
+  // Use optimized formatter if optimization was applied
+  if (scraped.optimizationApplied) {
+    return formatOptimizedForLLM(scraped);
+  }
+  
+  // Fallback to original formatter
   const lines = ["=== REAL-TIME MARKET INTELLIGENCE ===", `Scraped: ${scraped.scrapedAt}`, ""];
 
   const add = (header, items, fmt) => {
