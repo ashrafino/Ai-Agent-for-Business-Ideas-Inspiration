@@ -85,7 +85,7 @@ export const handler = async (event, context) => {
       };
 
       return db;
-    });
+    }, user.id);
 
     return {
       statusCode: 200,

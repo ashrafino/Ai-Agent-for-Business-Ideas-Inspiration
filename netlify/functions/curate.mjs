@@ -1,5 +1,5 @@
-import { update } from "./lib/storage.mjs";
-import { curateTopIdeas, verifyAuth } from "./lib/storage.mjs";
+import { update, verifyAuth } from "./lib/storage.mjs";
+import { curateTopIdeas } from "./lib/groq.mjs";
 
 /**
  * POST /api/curate
@@ -47,16 +47,18 @@ export const handler = async (event) => {
       db.hallOfFame  = curatorResult.topIdeas;
       hofSize        = db.hallOfFame.length;
       return db;
-    });
+    }, user.id);
 
     return {
       statusCode: 200, headers,
       body: JSON.stringify({ success: true, newAdmissions, hofSize }),
     };
   } catch (error) {
-    console.error("[VentureLens] curate error:", error.message);
+    const isAuthError = error.message.includes("authorization") || error.message.includes("token");
+    console.warn("[VentureLens] curate error:", error.message);
     return {
-      statusCode: 500, headers,
+      statusCode: isAuthError ? 401 : 500,
+      headers,
       body: JSON.stringify({ error: error.message }),
     };
   }

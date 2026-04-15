@@ -51,6 +51,9 @@ async function getCol() {
 }
 
 // ── Default empty database structure ─────────────────────────────────────────
+const USER_KEYS   = ["latest", "history", "todayIdeas", "todayDate"];
+const GLOBAL_KEYS = ["bestOfDay", "hallOfFame"];
+
 const DEFAULT_DB = {
   latest:     null,
   history:    [],
@@ -61,24 +64,67 @@ const DEFAULT_DB = {
   lastSaved:  null,
 };
 
-// ── Read the full DB document ─────────────────────────────────────────────────
-export async function readDB() {
-  const col = await getCol();           // throws if DB is unreachable
-  const doc = await col.findOne({ _id: "main" });
-  if (!doc) return { db: { ...DEFAULT_DB } };
-  const { _id, ...rest } = doc;
-  return { db: { ...DEFAULT_DB, ...rest } };
+// ── Read the DB document(s) ──────────────────────────────────────────────────
+export async function readDB(userId = "global") {
+  const col = await getCol();
+  
+  // 1. Fetch User Data
+  const userDoc = await col.findOne({ _id: userId === "global" ? "main" : userId });
+  
+  // 2. Fetch Global Data (if not already global)
+  let globalDoc = null;
+  if (userId !== "global") {
+    globalDoc = await col.findOne({ _id: "main" }); // "main" acts as the legacy/global bucket
+  }
+
+  const db = { ...DEFAULT_DB };
+  
+  // Fill from user doc
+  if (userDoc) {
+    USER_KEYS.forEach(k => { if (userDoc[k] !== undefined) db[k] = userDoc[k]; });
+    if (userId === "global") {
+       GLOBAL_KEYS.forEach(k => { if (userDoc[k] !== undefined) db[k] = userDoc[k]; });
+    }
+  }
+  
+  // Fill from global doc
+  if (globalDoc) {
+    GLOBAL_KEYS.forEach(k => { if (globalDoc[k] !== undefined) db[k] = globalDoc[k]; });
+  }
+
+  return { db };
 }
 
-// ── Write the full DB document ────────────────────────────────────────────────
-export async function writeDB(db) {
+// ── Write the DB document(s) ─────────────────────────────────────────────────
+export async function writeDB(db, userId = "global") {
   const col = await getCol();
-  const { _id, ...fields } = db;
+  const timestamp = new Date().toISOString();
+
+  // 1. Prepare User Update
+  const userFields = { lastSaved: timestamp };
+  USER_KEYS.forEach(k => { if (db[k] !== undefined) userFields[k] = db[k]; });
+  
+  if (userId === "global") {
+    GLOBAL_KEYS.forEach(k => { if (db[k] !== undefined) userFields[k] = db[k]; });
+  }
+
   await col.updateOne(
-    { _id: "main" },
-    { $set: { ...fields, lastSaved: new Date().toISOString() } },
+    { _id: userId === "global" ? "main" : userId },
+    { $set: userFields },
     { upsert: true }
   );
+
+  // 2. Prepare Global Update (if user is present)
+  if (userId !== "global") {
+    const globalFields = { lastSaved: timestamp };
+    GLOBAL_KEYS.forEach(k => { if (db[k] !== undefined) globalFields[k] = db[k]; });
+    
+    await col.updateOne(
+      { _id: "main" },
+      { $set: globalFields },
+      { upsert: true }
+    );
+  }
 }
 
 // ── Raw Data Lake: Dump Scraper output to MongoDB ─────────────────────────────
@@ -105,19 +151,18 @@ export async function saveScrapeToDB(scrapedData) {
 // ── High-level helpers ────────────────────────────────────────────────────────
 
 /** Read a single top-level key from the DB */
-export async function get(key) {
-  const { db } = await readDB();
+export async function get(key, userId = "global") {
+  const { db } = await readDB(userId);
   return db[key] ?? null;
 }
 
 /**
  * Read the DB, apply a mutation function, then write back.
- * Propagates errors — callers should handle them.
  */
-export async function update(mutateFn) {
-  const { db } = await readDB();
+export async function update(mutateFn, userId = "global") {
+  const { db } = await readDB(userId);
   const updatedDb = await mutateFn(db);
-  await writeDB(updatedDb);
+  await writeDB(updatedDb, userId);
   return updatedDb;
 }
 

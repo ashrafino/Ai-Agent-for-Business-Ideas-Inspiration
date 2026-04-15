@@ -17,8 +17,6 @@ export const handler = async (event) => {
 
   const type = event.queryStringParameters?.type || "latest";
 
-  try {
-    // 🔒 Enforce Authentication
     const user = verifyAuth(event);
     console.log(`[VentureLens] Authorized access for ${user.email} (${type})`);
 
@@ -26,25 +24,25 @@ export const handler = async (event) => {
 
     switch (type) {
       case "latest":
-        data = await get("latest");
+        data = await get("latest", user.id);
         if (!data) data = { status: "empty", ideas: [] };
         break;
 
       case "history":
-        data = (await get("history")) || [];
+        data = (await get("history", user.id)) || [];
         break;
 
       case "best-of-day":
-        data = (await get("bestOfDay")) || { ideas: [] };
+        data = (await get("bestOfDay", user.id)) || { ideas: [] };
         break;
 
       case "hall-of-fame":
-        data = (await get("hallOfFame")) || [];
+        data = (await get("hallOfFame", user.id)) || [];
         break;
 
       case "all": {
         // Return full DB snapshot (used by health check etc.)
-        const { db } = await readDB();
+        const { db } = await readDB(user.id);
         data = db;
         break;
       }

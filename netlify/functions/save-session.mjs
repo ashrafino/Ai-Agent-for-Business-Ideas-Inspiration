@@ -95,7 +95,7 @@ export const handler = async (event) => {
       };
 
       return db;
-    });
+    }, user.id);
 
     return {
       statusCode: 200, headers,
@@ -108,9 +108,11 @@ export const handler = async (event) => {
       }),
     };
   } catch (error) {
-    console.error("[VentureLens] save-session error:", error.message);
+    const isAuthError = error.message.includes("authorization") || error.message.includes("token");
+    console.warn("[VentureLens] save-session error:", error.message);
     return {
-      statusCode: 500, headers,
+      statusCode: isAuthError ? 401 : 500,
+      headers,
       body: JSON.stringify({ error: error.message }),
     };
   }
