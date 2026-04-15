@@ -55,12 +55,13 @@ const OPENROUTER_MODELS = [
   { model: "openrouter/auto",                         ctx: 8192   }, 
 ];
 
-// Google Gemini — direct API, final high-quality fallback
+// Google Gemini — direct API, reliable high-quality fallback (placed BEFORE OpenRouter)
+// Uses the OpenAI-compatible endpoint: v1beta/openai
 const GEMINI_MODELS = [
-  { model: "gemini-2.0-flash",          ctx: 1048576 }, // fast, 1M ctx, free quota
-  { model: "gemini-2.0-flash-lite",     ctx: 1048576 }, // even faster, free quota
-  { model: "gemini-1.5-flash",          ctx: 1048576 }, // proven stable fallback
-  { model: "gemini-1.5-flash-8b",       ctx: 1048576 }, // smallest/fastest
+  { model: "gemini-2.0-flash",          ctx: 1048576 }, // fast, 1M ctx, free quota: 15 RPM
+  { model: "gemini-2.0-flash-lite",     ctx: 1048576 }, // faster, very generous free tier
+  { model: "gemini-1.5-flash",          ctx: 1048576 }, // proven stable, 15 RPM
+  { model: "gemini-1.5-pro",            ctx: 2097152 }, // most capable, 2 RPM free
 ];
 
 // Models for diversity across judging panel
@@ -72,9 +73,9 @@ const MODELS = {
 
 // ── Rate limit config ─────────────────────────────────────────────────────────
 const RATE_LIMIT = {
-  minDelayMs:       250,
-  maxRetries:       2,  // 2 retries for transient errors (debate-round has 90s timeout)
-  backoffBaseMs:    800,
+  minDelayMs:        1500, // Wait 1.5s between calls to avoid Groq RPM exhaustion across rounds
+  maxRetries:        2,
+  backoffBaseMs:     800,
   backoffMultiplier: 1.5,
 };
 
@@ -100,10 +101,10 @@ function buildAttemptQueue(preferredModel) {
   else if (isPreferredGem) add("gemini",     preferredModel);
   else                     add("groq",       preferredModel);
 
-  // Then the rest of Groq, then OpenRouter, then Gemini as final fallback
+  // Queue order: Groq (primary) → Gemini (reliable second fallback) → OpenRouter (free but flaky)
   for (const m of GROQ_MODELS)       add("groq",       m.model);
+  for (const m of GEMINI_MODELS)     add("gemini",     m.model); // Gemini before OpenRouter
   for (const m of OPENROUTER_MODELS) add("openrouter", m.model);
-  for (const m of GEMINI_MODELS)     add("gemini",     m.model);
 
   console.log(`[Queue] Built attempt queue with ${queue.length} models: ${queue.map(q => q.model).join(", ")}`);
   return queue;
