@@ -30,29 +30,20 @@ const GROQ_API_URL    = "https://api.groq.com/openai/v1/chat/completions";
 const GEMINI_API_URL  = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
 // ── Model roster ─────────────────────────────────────────────────────────────
-// Groq free tier — ordered by capability/speed tradeoff
+// Groq free tier — only the 3 best models (429 is per-account, no point trying 7)
 const GROQ_MODELS = [
-  { model: "llama-3.3-70b-versatile",                   ctx: 131072 }, // the smartest model
-  { model: "llama-3.1-70b-versatile",                   ctx: 131072 }, // very capable
-  { model: "llama-3.1-8b-instant",                      ctx: 131072 }, // ultra-fast
-  { model: "llama3-70b-8192",                           ctx: 8192   }, // standard 70b
-  { model: "llama3-8b-8192",                            ctx: 8192   }, // standard 8b
-  { model: "mixtral-8x7b-32768",                        ctx: 32768  }, // good reasoning
-  { model: "gemma2-9b-it",                              ctx: 8192   }, // google model
+  { model: "llama-3.3-70b-versatile",   ctx: 131072 }, // smartest
+  { model: "llama-3.1-8b-instant",      ctx: 131072 }, // ultra-fast, different rate pool
+  { model: "gemma2-9b-it",              ctx: 8192   }, // Google model, different rate pool
 ];
 
-// OpenRouter free tier — fallback when Groq is exhausted/rate-limited
+// OpenRouter free tier — ONLY :free models (no openrouter/auto which requires credits)
 const OPENROUTER_MODELS = [
   { model: "google/gemma-2-9b-it:free",               ctx: 8192   }, 
-  { model: "qwen/qwen-2-7b-instruct:free",            ctx: 32768  },
   { model: "mistralai/mistral-7b-instruct:free",      ctx: 32768  },
   { model: "google/gemini-2.0-flash-exp:free",        ctx: 1048576},
-  { model: "google/gemma-2-27b-it:free",              ctx: 8192   },
   { model: "meta-llama/llama-3.1-8b-instruct:free",   ctx: 131072 },
-  { model: "meta-llama/llama-3-8b-instruct:free",     ctx: 8192   },
   { model: "microsoft/phi-3-mini-128k-instruct:free", ctx: 128000 },
-  { model: "gryphe/mythomax-l2-13b:free",             ctx: 4096   }, 
-  { model: "openrouter/auto",                         ctx: 8192   }, 
 ];
 
 // Google Gemini — direct API, reliable high-quality fallback (placed BEFORE OpenRouter)
@@ -73,8 +64,9 @@ const MODELS = {
 
 // ── Rate limit config ─────────────────────────────────────────────────────────
 const RATE_LIMIT = {
-  minDelayMs:        1500, // Wait 1.5s between calls to avoid Groq RPM exhaustion across rounds
-  maxRetries:        1,    // Only 1 retry — fail fast and move to next model/provider
+  minDelayMs:        2000,  // 2s between calls within a single round
+  interRoundDelayMs: 4000,  // 4s between rounds to let quotas refill
+  maxRetries:        0,     // Zero retries — fail INSTANTLY and move to next model/provider
   backoffBaseMs:     800,
   backoffMultiplier: 1.5,
 };
@@ -190,43 +182,50 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
         if (!response.ok) {
           const errText = await response.text();
           const isHtml = errText.trim().toLowerCase().startsWith("<!doctype") || errText.trim().toLowerCase().startsWith("<html");
-          const isTransient = response.status === 429 || response.status === 408 || response.status >= 500 || isHtml;
           
-          // OpenRouter sometimes returns 401 "User not found" or 430/402 for free models when its upstream is flaky
-          const isOpenRouterFlaky = !isGroq && (response.status === 401 || response.status === 402 || response.status === 430);
+          // === 429 Rate Limit: Kill the ENTIRE provider (rate limits are per-account, not per-model) ===
+          if (response.status === 429) {
+            console.warn(`[${provider}] 🛑 Rate limited (429) on ${currentModel}. Killing ENTIRE ${provider} provider.`);
+            deadProviders.add(provider);
+            failedModels.add(currentModel);
+            lastError = new Error(`${provider} rate limited (429) on ${currentModel}`);
+            break;
+          }
 
-          if ((isTransient || isOpenRouterFlaky) && attempt < RATE_LIMIT.maxRetries) {
-            const wait = RATE_LIMIT.backoffBaseMs * Math.pow(RATE_LIMIT.backoffMultiplier, attempt);
-            // On 429 from Groq/Gemini, skip immediately to next model rather than waiting
-            if (response.status === 429 && !isGroq) {
-              console.warn(`[${provider}] Rate limited (429) on ${currentModel}. Trying next model immediately.`);
+          // === 402 Payment Required: Kill the provider (account issue) ===
+          if (response.status === 402) {
+            console.warn(`[${provider}] 🛑 Payment required (402) on ${currentModel}. Killing ENTIRE ${provider} provider.`);
+            deadProviders.add(provider);
+            failedModels.add(currentModel);
+            lastError = new Error(`${provider} requires payment (402): ${errText.slice(0, 150)}`);
+            break;
+          }
+
+          // === 401/403 Auth errors ===
+          if (response.status === 401 || response.status === 403) {
+            // OpenRouter 401s are often per-model upstream errors
+            if (!isGroq && !isGemini && response.status === 401) {
+              console.warn(`[${provider}] Model-specific auth error on ${currentModel}. Skipping model.`);
               failedModels.add(currentModel);
               break;
             }
+            console.error(`[${provider}] Fatal auth error (${response.status}). Killing provider.`);
+            deadProviders.add(provider);
+            break;
+          }
+
+          // === Transient 5xx / HTML errors / 408 — retry if allowed ===
+          const isTransient = response.status === 408 || response.status >= 500 || isHtml;
+          if (isTransient && attempt < RATE_LIMIT.maxRetries) {
+            const wait = RATE_LIMIT.backoffBaseMs * Math.pow(RATE_LIMIT.backoffMultiplier, attempt);
             console.warn(`[${provider}] Transient error (${response.status}) on ${currentModel}. Retrying in ${wait}ms...`);
             await delay(wait);
             continue;
           }
 
-          lastError = new Error(`API error (${response.status}) on ${currentModel}: ${isHtml ? "HTML timeout/proxy error" : errText.slice(0, 300)}`);
-
-          // For OpenRouter, 401 errors are often model-specific (upstream provider issues), not account-level
-          // So we skip the model but keep trying other OpenRouter models
-          if (response.status === 401 && !isGroq) {
-            console.warn(`[${provider}] Model-specific auth error on ${currentModel} (likely upstream issue). Trying next model...`);
-            failedModels.add(currentModel);
-            break;
-          }
-
-          // For Groq or other 403 errors, it's a real auth problem - skip the entire provider
-          if (response.status === 401 || response.status === 403) {
-            console.error(`[${provider}] Fatal auth error (${response.status}: ${errText.slice(0, 100)}). Skipping provider for this call.`);
-            deadProviders.add(provider);
-            break;
-          }
-
-          // Other errors (404, 400, or exhausted retries for 429/5xx) — mark model, try next
-          console.warn(`[${provider}] ${currentModel} → HTTP ${response.status}, trying next model...`);
+          // === All other errors (404, 400, etc.) — skip model ===
+          lastError = new Error(`API error (${response.status}) on ${currentModel}: ${isHtml ? "HTML error" : errText.slice(0, 200)}`);
+          console.warn(`[${provider}] ${currentModel} → HTTP ${response.status}, skipping model.`);
           failedModels.add(currentModel);
           break;
         }
@@ -684,38 +683,51 @@ export async function runFullDebate(options = {}) {
     ? scrapedContext.slice(0, MAX_SCRAPE_CHARS) + "\n[...data truncated for token efficiency]"
     : scrapedContext;
 
-  // Round 1: Scout — inject full scrape context here ONLY
+  // Round 1: Scout — inject scrape context here ONLY
   const scoutPrompt = compactScrape
     ? `${compactScrape}\n\nFrom this market data, extract 5 micro-startup opportunities. Cite specific post titles or product names as evidence. Each idea should have: Name, Concept, Evidence, Why under $500, Unfair Advantage.`
     : "Find 5 micro-startup ideas for a Morocco-based data engineer (under $500 launch). Focus on AI wrappers, micro-SaaS, productized data services with proven demand.";
-  await runAgentRound(1, "scout", scoutPrompt, "", { maxTokens: 900 });
+  await runAgentRound(1, "scout", scoutPrompt, "", { maxTokens: 800 });
+
+  // === Inter-round cooldown: let free-tier quotas refill ===
+  console.log(`[VentureLens] ⏳ Cooling down ${RATE_LIMIT.interRoundDelayMs}ms before Round 2...`);
+  await delay(RATE_LIMIT.interRoundDelayMs);
 
   // Round 2: Analyst — context only (no scrape re-injection)
   await runAgentRound(2, "analyst",
-    "Analyze the 5 Scout ideas: validate TAM, pricing, competition. Give specific numbers.",
+    "Analyze the 5 Scout ideas: validate TAM, pricing, competition. Be concise, give specific numbers.",
     context,
-    { maxTokens: 700 }
+    { maxTokens: 600 }
   );
+
+  console.log(`[VentureLens] ⏳ Cooling down ${RATE_LIMIT.interRoundDelayMs}ms before Round 3...`);
+  await delay(RATE_LIMIT.interRoundDelayMs);
 
   // Round 3: Critic — context only
   await runAgentRound(3, "critic",
     "Find fatal flaws in each idea. Be brutally honest. Assign a risk score (1-10) for each.",
     context,
-    { maxTokens: 600 }
+    { maxTokens: 500 }
   );
+
+  console.log(`[VentureLens] ⏳ Cooling down ${RATE_LIMIT.interRoundDelayMs}ms before Round 4...`);
+  await delay(RATE_LIMIT.interRoundDelayMs);
 
   // Round 4: Strategist — context only
   await runAgentRound(4, "strategist",
-    "Provide a 4-week launch plan and Morocco-specific execution guide for each surviving idea. Include exact tech stack and costs.",
+    "Provide a 4-week launch plan for each idea. Include exact tech stack and monthly costs. Be brief.",
     context,
-    { maxTokens: 700 }
+    { maxTokens: 600 }
   );
+
+  console.log(`[VentureLens] ⏳ Cooling down ${RATE_LIMIT.interRoundDelayMs}ms before Round 5...`);
+  await delay(RATE_LIMIT.interRoundDelayMs);
 
   // Round 5: Initial Judge — JSON only
   const judgeResult = await runAgentRound(5, "judge",
     "Classify all 5 ideas as JSON. Output ONLY the JSON array, no other text.",
     context,
-    { maxTokens: 1000, temperature: 0.2 } // Low temp for reliable JSON
+    { maxTokens: 900, temperature: 0.2 }
   );
 
   // Parse initial ideas (fallback if judge failed)
@@ -740,12 +752,14 @@ export async function runFullDebate(options = {}) {
 
   const runJudgeRound = async (roundNum, judgeKey, ideas, debateContext) => {
     const judge = JUDGING_PANEL[judgeKey];
-    console.log(`[VentureLens] Phase 2 — Round ${roundNum}: ${judge.name} (${judge.model}) evaluating...`);
+    console.log(`[VentureLens] Phase 2 — Round ${roundNum}: ${judge.name}...`);
+    // Compact idea summary for judges — only send name + concept, not full idea objects
+    const compactIdeas = ideas.map(i => ({ name: i.name, concept: i.concept, tier: i.tier, score: i.score }));
     try {
       const result = await runRound(judge, 
-        `Rate these startup ideas on 4 criteria (1-10 each). Ideas:\n${JSON.stringify(ideas, null, 2)}\nOutput ONLY valid JSON.`,
+        `Rate these startup ideas on 4 criteria (1-10 each). Ideas:\n${JSON.stringify(compactIdeas)}\nOutput ONLY valid JSON.`,
         debateContext, 
-        { temperature: judge.temperature, model: judge.model, maxTokens: 1024, netlifyContext: options.netlifyContext }
+        { temperature: judge.temperature, model: judge.model, maxTokens: 600, netlifyContext: options.netlifyContext }
       );
       debateLog.push({ round: roundNum, agent: judgeKey, content: result, timestamp: new Date().toISOString() });
       return result;
@@ -757,12 +771,16 @@ export async function runFullDebate(options = {}) {
   };
 
   // Round 6: Judge Alpha
-  const alphaResult = await runJudgeRound(6, "alpha", classifiedIdeas, ""); // no debate ctx — saves tokens
+  console.log(`[VentureLens] ⏳ Cooling down before judging panel...`);
+  await delay(RATE_LIMIT.interRoundDelayMs);
+  const alphaResult = await runJudgeRound(6, "alpha", classifiedIdeas, "");
 
   // Round 7: Judge Beta
+  await delay(RATE_LIMIT.interRoundDelayMs);
   const betaResult  = await runJudgeRound(7, "beta",  classifiedIdeas, "");
 
   // Round 8: Judge Gamma
+  await delay(RATE_LIMIT.interRoundDelayMs);
   const gammaResult = await runJudgeRound(8, "gamma", classifiedIdeas, "");
 
   // Parse and average ratings
@@ -780,6 +798,7 @@ export async function runFullDebate(options = {}) {
 
   // === PHASE 3: Morocco Implementation Notes ===
   console.log("[VentureLens] Phase 3 — Generating Morocco Implementation Notes...");
+  await delay(RATE_LIMIT.interRoundDelayMs);
 
   let moroccoNotes = null;
   try {
