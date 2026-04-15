@@ -37,13 +37,12 @@ const GROQ_MODELS = [
   { model: "gemma2-9b-it",              ctx: 8192   }, // Google model, different rate pool
 ];
 
-// OpenRouter free tier — ONLY :free models (no openrouter/auto which requires credits)
+// OpenRouter free tier — ONLY verified working :free models
 const OPENROUTER_MODELS = [
-  { model: "google/gemma-2-9b-it:free",               ctx: 8192   }, 
+  { model: "google/gemma-2-9b-it:free",               ctx: 8192   },
   { model: "mistralai/mistral-7b-instruct:free",      ctx: 32768  },
   { model: "google/gemini-2.0-flash-exp:free",        ctx: 1048576},
   { model: "meta-llama/llama-3.1-8b-instruct:free",   ctx: 131072 },
-  { model: "microsoft/phi-3-mini-128k-instruct:free", ctx: 128000 },
 ];
 
 // Google Gemini — direct API, reliable high-quality fallback (placed BEFORE OpenRouter)
@@ -183,12 +182,14 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
           const errText = await response.text();
           const isHtml = errText.trim().toLowerCase().startsWith("<!doctype") || errText.trim().toLowerCase().startsWith("<html");
           
-          // === 429 Rate Limit: Kill the ENTIRE provider (rate limits are per-account, not per-model) ===
+          // === 429 Rate Limit: skip the MODEL, not the provider ===
+          // Groq & Gemini have per-model rate pools, so the next model may have quota
           if (response.status === 429) {
-            console.warn(`[${provider}] 🛑 Rate limited (429) on ${currentModel}. Killing ENTIRE ${provider} provider.`);
-            deadProviders.add(provider);
+            console.warn(`[${provider}] ⚠️ Rate limited (429) on ${currentModel}. Skipping model, trying next in ${provider}...`);
             failedModels.add(currentModel);
             lastError = new Error(`${provider} rate limited (429) on ${currentModel}`);
+            // Brief cooldown before trying next model in same provider
+            await delay(3000);
             break;
           }
 
