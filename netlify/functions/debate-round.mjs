@@ -1,15 +1,63 @@
 import { AGENTS, JUDGING_PANEL, runRound } from "./lib/groq.mjs";
 import { scrapeAllSources, formatScrapedDataForLLM } from "./lib/scraper.mjs";
+import { getCuratedLists, queryIdeas } from "./lib/idea-storage.mjs";
 
 /**
- * Compact scrape summary injected into ALL debate rounds 1-5.
- * Keeps token usage low while ensuring every agent sees real market data.
- * Max ~4000 chars — well within Groq's context window.
+ * Build context from database + live scrape
+ * Prioritizes database ideas (historical best) + fresh scrape (latest trends)
  */
-function buildCompactScrapeContext(scraped, isSubRound = false) {
+async function buildEnhancedContext(scraped, isSubRound = false) {
   const lines = [];
-  lines.push("=== LIVE MARKET DATA (scraped this session) ===");
-
+  
+  // Try to get curated ideas from database
+  let dbIdeas = null;
+  try {
+    dbIdeas = await getCuratedLists();
+    console.log("[VentureLens] Loaded curated ideas from database");
+  } catch (err) {
+    console.warn("[VentureLens] Database not available, using live scrape only:", err.message);
+  }
+  
+  lines.push("=== CURATED STARTUP IDEAS DATABASE ===");
+  
+  if (dbIdeas) {
+    // Gold tier ideas (validated traction)
+    if (dbIdeas.goldIdeas?.length > 0) {
+      lines.push("\n[🥇 GOLD TIER — Validated Traction]");
+      for (const idea of dbIdeas.goldIdeas.slice(0, 5)) {
+        lines.push(`• [Q:${Math.round(idea.qualityScore)}] ${idea.title} (${idea.source})`);
+        if (idea.description) lines.push(`  ${idea.description.slice(0, 100)}...`);
+      }
+    }
+    
+    // Pain points
+    if (dbIdeas.painPoints?.length > 0) {
+      lines.push("\n[💡 PAIN POINTS — Clear Problems to Solve]");
+      for (const idea of dbIdeas.painPoints.slice(0, 5)) {
+        lines.push(`• [Q:${Math.round(idea.qualityScore)}] ${idea.title} (${idea.source})`);
+      }
+    }
+    
+    // Validated ideas
+    if (dbIdeas.validated?.length > 0) {
+      lines.push("\n[✅ VALIDATED — Proven Traction]");
+      for (const idea of dbIdeas.validated.slice(0, 5)) {
+        lines.push(`• [${idea.upvotes}↑] ${idea.title} (${idea.source})`);
+      }
+    }
+    
+    // Trending
+    if (dbIdeas.trending?.length > 0) {
+      lines.push("\n[🔥 TRENDING — Recent + High Engagement]");
+      for (const idea of dbIdeas.trending.slice(0, 5)) {
+        lines.push(`• [${idea.upvotes}↑] ${idea.title} (${idea.source})`);
+      }
+    }
+  }
+  
+  lines.push("\n=== LIVE MARKET DATA (scraped this session) ===");
+  
+  // Add live scrape data
   const hn = scraped.hackerNews?.posts || [];
   const hnAsk = scraped.hackerNewsAsk?.posts || [];
   const reddit = scraped.reddit?.posts || [];
@@ -18,8 +66,6 @@ function buildCompactScrapeContext(scraped, isSubRound = false) {
   const gh = scraped.githubTrending?.repos || [];
   const yc = scraped.ycombinator?.companies || [];
 
-  // For sub-rounds (Analyst, Critic, Strategist), we use a much leaner context
-  // to save tokens and prevent timeouts.
   const limit = isSubRound ? 3 : 8;
 
   if (hn.length > 0) {
@@ -74,7 +120,7 @@ function buildCompactScrapeContext(scraped, isSubRound = false) {
 const ROUND_CONFIG = {
   1: {
     agent: AGENTS.scout,
-    prompt: (ctx) => `${ctx}\n\nUsing ONLY the real market data above, extract 5 micro-startup opportunities:\n1. Reddit/HN Ask pain points where people say "need a tool", "paying for", "wish there was"\n2. Product Hunt category gaps — what's missing or underserved?\n3. Indie Hackers MRR patterns worth replicating in a niche\n4. GitHub trending tools to wrap as managed SaaS\n5. YC W25 companies — build the cheaper/niche alternative\n\nCite SPECIFIC post titles, product names, or MRR figures as evidence. NO invented demand.`,
+    prompt: (ctx) => `${ctx}\n\nUsing the curated database ideas AND live market data above, extract 5 micro-startup opportunities:\n\n1. From GOLD TIER database: Identify patterns and gaps in validated ideas\n2. From PAIN POINTS: Find clear problems people are willing to pay to solve\n3. From VALIDATED ideas: Look for proven traction patterns to replicate\n4. From TRENDING: Spot emerging opportunities with momentum\n5. From LIVE DATA: Find fresh opportunities from today's scrape\n\nPrioritize ideas from the database (they're pre-filtered for quality). Cite SPECIFIC titles, quality scores, and sources as evidence. NO invented demand.`,
     options: { maxTokens: 2500 },
   },
   2: {
@@ -158,7 +204,7 @@ export const handler = async (event, context) => {
         console.log(`[VentureLens] Round ${round}: loading market intelligence...`);
         const isSubRound = round > 1; // Only the first round does a fresh scrape
         const scrapedData = await scrapeAllSources({ isSubRound });
-        scrapedContext = buildCompactScrapeContext(scrapedData, isSubRound);
+        scrapedContext = await buildEnhancedContext(scrapedData, isSubRound);
         sourceCounts = {
           hackerNews:     scrapedData.hackerNews?.posts?.length     || 0,
           hackerNewsAsk:  scrapedData.hackerNewsAsk?.posts?.length  || 0,

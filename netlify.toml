@@ -17,6 +17,10 @@
   schedule = "0 */6 * * *"
   timeout = 60    # 12 sources in parallel, needs headroom
 
+[functions."scheduled-scraper"]
+  schedule = "0 */2 * * *"  # Every 2 hours
+  timeout = 120   # 2 min — scrape + optimize + save to MongoDB
+
 # ── API Function Timeouts ─────────────────────────────────────────────────────
 [functions."debate-round"]
   timeout = 90    # single LLM round + optional scrape (cached)

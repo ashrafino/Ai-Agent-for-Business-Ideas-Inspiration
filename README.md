@@ -40,12 +40,15 @@ VentureLens now uses ProductHunt API for richer startup data. See [PRODUCTHUNT_A
 
 - **Frontend**: Static HTML/CSS/JS in `public/` — no framework, no build step
 - **Backend**: Netlify Functions (ESM, Node 20) in `netlify/functions/`
-- **Storage**: Netlify Blobs (zero-config, built into every Netlify site)
+- **Storage**: 
+  - Netlify Blobs (zero-config, built into every Netlify site)
+  - MongoDB (persistent idea database with automated scraping)
 - **LLM**: Groq API (primary) + OpenRouter (fallback)
 - **Scraping**: 12 sources with intelligent NLP-powered optimization
   - Sources: HN, Reddit OAuth, Product Hunt API, Indie Hackers, GitHub, DEV.to, BetaList, Lobsters, AppSumo, YC W25, Google Trends, Starter Story
-  - **NEW**: Advanced content filtering using keyword scoring, engagement metrics, and quality analysis
-  - Automatically filters spam and prioritizes validated opportunities (see [SCRAPER_OPTIMIZATION.md](SCRAPER_OPTIMIZATION.md))
+  - **Optimization**: Advanced content filtering using keyword scoring, engagement metrics, and quality analysis
+  - **Automation**: Runs every 2 hours, builds comprehensive idea database
+  - See [SCRAPER_OPTIMIZATION.md](SCRAPER_OPTIMIZATION.md) and [DATABASE_SETUP.md](DATABASE_SETUP.md)
 
 ## Scheduled Jobs
 
@@ -53,6 +56,7 @@ VentureLens now uses ProductHunt API for richer startup data. See [PRODUCTHUNT_A
 |---|---|---|
 | `scheduled-analysis` | Every hour | Full 9-round AI debate |
 | `warm-scraper-cache` | Every 6 hours | Pre-warm scraper cache |
+| `scheduled-scraper` | Every 2 hours | **NEW**: Scrape + optimize + save to MongoDB database |
 
 ## API Endpoints
 
@@ -65,3 +69,11 @@ VentureLens now uses ProductHunt API for richer startup data. See [PRODUCTHUNT_A
 | `/api/health` | GET | Check storage health |
 | `/api/trigger-analysis` | POST | Manual full analysis run |
 | `/api/curate` | POST | Run Hall of Fame curator |
+| `/api/get-ideas` | GET | **NEW**: Query idea database with filters |
+
+## Web Pages
+
+| Page | Description |
+|---|---|
+| `/index.html` | Main analysis dashboard |
+| `/ideas.html` | **NEW**: Browse idea database (updated every 2 hours) |
