@@ -64,8 +64,8 @@ const MODELS = {
 // ── Rate limit config ─────────────────────────────────────────────────────────
 const RATE_LIMIT = {
   minDelayMs:       250,
-  maxRetries:       2,
-  backoffBaseMs:    2000,
+  maxRetries:       1,  // Reduced from 2 to 1 to avoid Netlify timeouts (free APIs fail fast anyway)
+  backoffBaseMs:    1000,  // Reduced from 2000 to 1000
   backoffMultiplier: 1.5,
 };
 
@@ -98,6 +98,7 @@ function buildAttemptQueue(preferredModel) {
   for (const m of GROQ_MODELS)       add("groq",       m.model);
   for (const m of OPENROUTER_MODELS) add("openrouter", m.model);
 
+  console.log(`[Queue] Built attempt queue with ${queue.length} models: ${queue.map(q => q.model).join(", ")}`);
   return queue;
 }
 
@@ -121,6 +122,8 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
     if (failedModels.has(currentModel))    { console.log(`[Skip] ${currentModel} - already failed`); continue; }
     if (deadProviders.has(provider))       { console.log(`[Skip] ${provider} - provider dead`); continue; }
 
+    console.log(`[Trying] ${provider} / ${currentModel}`);
+    
     const isGroq = provider === "groq";
     const apiKey = isGroq ? groqKey : orKey;
     const apiUrl = isGroq
@@ -140,8 +143,8 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
           timeoutMs = Math.min(timeoutMs, remaining - 3000);
           
           if (timeoutMs < 2000) {
-            console.error(`[VentureLens] Not enough time left in lambda (${remaining}ms). Skipping retry/model.`);
-            break; 
+            console.error(`[VentureLens] Not enough time left in lambda (${remaining}ms). Stopping model attempts.`);
+            throw new Error(`Netlify function timeout approaching (${remaining}ms remaining). Tried ${failedModels.size} models so far.`);
           }
         }
 
@@ -226,7 +229,20 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
   // Provide detailed error message showing what was tried
   const triedModels = Array.from(failedModels).join(", ");
   const triedProviders = Array.from(deadProviders).join(", ");
-  const errorMsg = `All models exhausted. Tried ${failedModels.size} models${triedModels ? `: ${triedModels}` : ""}. Dead providers: ${triedProviders || "none"}. Last error: ${lastError?.message || "unknown"}`;
+  
+  let errorMsg = `All models exhausted. Tried ${failedModels.size} models${triedModels ? `: ${triedModels}` : ""}. Dead providers: ${triedProviders || "none"}. Last error: ${lastError?.message || "unknown"}`;
+  
+  // Check if OpenRouter was the issue
+  const openRouterFailed = Array.from(failedModels).some(m => m.includes("/") || m.includes(":free"));
+  const groqFailed = Array.from(failedModels).some(m => m.includes("llama") || m.includes("mixtral") || m.includes("gemma2"));
+  
+  if (openRouterFailed && !groqFailed) {
+    errorMsg += "\n\nℹ️ OpenRouter API issue detected. Check that your OPENROUTER_API_KEY is valid and your account is properly set up at https://openrouter.ai/";
+  } else if (groqFailed && !openRouterFailed) {
+    errorMsg += "\n\nℹ️ Groq API issue detected. Check that your GROQ_API_KEY is valid or you may have hit rate limits.";
+  } else if (groqFailed && openRouterFailed) {
+    errorMsg += "\n\nℹ️ Both Groq and OpenRouter failed. This usually means rate limits or invalid API keys. Wait a few minutes and try again.";
+  }
   
   throw new Error(errorMsg);
 }
