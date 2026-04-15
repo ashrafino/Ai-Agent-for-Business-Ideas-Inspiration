@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VentureLens — AI-Powered Micro-VC Analyst</title>
+  <meta name="description" content="Autonomous AI research agent that scans the startup landscape 24/7, debates ideas through multi-agent analysis with a 3-judge rating panel, and classifies the most profitable micro-startup opportunities.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>V</text></svg>">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <!-- Ambient Background -->
+  <div class="ambient-bg">
+    <div class="ambient-orb orb-1"></div>
+    <div class="ambient-orb orb-2"></div>
+    <div class="ambient-orb orb-3"></div>
+  </div>
+
+  <!-- Header -->
+  <header id="main-header">
+    <div class="header-content">
+      <div class="logo-section">
+        <div class="logo-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <path d="M16 2L28 8V24L16 30L4 24V8L16 2Z" stroke="url(#logo-grad)" stroke-width="2" fill="none"/>
+            <path d="M16 8L22 11V21L16 24L10 21V11L16 8Z" fill="url(#logo-grad)" opacity="0.3"/>
+            <circle cx="16" cy="16" r="3" fill="url(#logo-grad)"/>
+            <defs>
+              <linearGradient id="logo-grad" x1="4" y1="2" x2="28" y2="30">
+                <stop offset="0%" stop-color="#00d4ff"/>
+                <stop offset="100%" stop-color="#7c3aed"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <h1>VentureLens</h1>
+          <span class="logo-subtitle">Autonomous Micro-VC Analyst</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <div class="status-indicator" id="status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-text" id="status-text">Initializing...</span>
+        </div>
+        <div class="last-updated" id="last-updated">—</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main id="main-content">
+    <!-- Stats Bar -->
+    <section class="stats-bar" id="stats-bar">
+      <div class="stat-card">
+        <div class="stat-icon-wrap"><svg class="stat-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-sessions">0</span>
+          <span class="stat-label">Analyses Run</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon-wrap"><svg class="stat-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-ideas">0</span>
+          <span class="stat-label">Ideas Generated</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon-wrap"><svg class="stat-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg></div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-top-tier">—</span>
+          <span class="stat-label">Top Tier</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon-wrap"><svg class="stat-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg></div>
+        <div class="stat-info">
+          <span class="stat-value" id="stat-next-run">—</span>
+          <span class="stat-label">Next Auto-Run</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav" id="tab-nav">
+      <button class="tab-btn active" data-tab="latest" id="tab-latest">Latest Analysis</button>
+      <button class="tab-btn" data-tab="bestofday" id="tab-bestofday">Best of Day</button>
+      <button class="tab-btn tab-hof" data-tab="halloffame" id="tab-halloffame">⭐ Top Ideas</button>
+      <button class="tab-btn" data-tab="history" id="tab-history">History</button>
+      <button class="tab-btn tab-intel" data-tab="intelligence" id="tab-intelligence">🔭 Raw Intel</button>
+    </nav>
+
+    <!-- Tab: Latest Analysis -->
+    <section class="tab-content active" id="panel-latest">
+      <div class="action-bar">
+        <div class="action-bar-left">
+          <h2>Latest Analysis</h2>
+          <p class="action-subtitle" id="action-subtitle">9-round multi-agent debate with 3-judge rating panel</p>
+        </div>
+        <div class="action-bar-right">
+          <button class="btn btn-secondary" id="btn-view-debate" disabled>
+            <span class="btn-text">View Debate</span>
+          </button>
+          <button class="btn btn-primary" id="btn-run-analysis">
+            <span class="btn-text">Run Live Analysis</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="ideas-section" id="ideas-section">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon-svg">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+          </div>
+          <h3>No Analysis Results Yet</h3>
+          <p>Click <strong>"Run Live Analysis"</strong> to start a 9-round multi-agent debate, or wait for the next hourly run.</p>
+          <p class="empty-hint">The system runs automatically every hour using 5 debate agents, 3 independent LLM judges, and a Morocco implementation advisor.</p>
+        </div>
+        <div class="ideas-grid" id="ideas-grid"></div>
+      </div>
+
+      <!-- Live Debate Panel -->
+      <section class="debate-panel" id="debate-panel" style="display: none;">
+        <div class="debate-header">
+          <div class="debate-title-area">
+            <h2>Live Multi-Agent Debate</h2>
+            <div class="debate-progress">
+              <div class="progress-bar">
+                <div class="progress-fill" id="debate-progress-fill" style="width: 0%"></div>
+              </div>
+              <span class="progress-text" id="debate-progress-text">Round 0/9</span>
+            </div>
+          </div>
+          <button class="btn btn-ghost" id="btn-close-debate">✕</button>
+        </div>
+
+        <!-- Phase Labels -->
+        <div class="phase-labels">
+          <div class="phase-label phase-debate">Phase 1 — Debate</div>
+          <div class="phase-label phase-judging">Phase 2 — Judging Panel</div>
+          <div class="phase-label phase-morocco">Phase 3 — Morocco</div>
+        </div>
+
+        <!-- Agent Chips -->
+        <div class="agents-bar" id="agents-bar">
+          <div class="agent-chip" data-agent="scout">
+            <span class="agent-dot" style="background: #00d4ff"></span>
+            <span>Scout</span>
+          </div>
+          <div class="agent-chip" data-agent="analyst">
+            <span class="agent-dot" style="background: #7c3aed"></span>
+            <span>Analyst</span>
+          </div>
+          <div class="agent-chip" data-agent="critic">
+            <span class="agent-dot" style="background: #ef4444"></span>
+            <span>Critic</span>
+          </div>
+          <div class="agent-chip" data-agent="strategist">
+            <span class="agent-dot" style="background: #10b981"></span>
+            <span>Strategist</span>
+          </div>
+          <div class="agent-chip" data-agent="judge">
+            <span class="agent-dot" style="background: #f59e0b"></span>
+            <span>Judge</span>
+          </div>
+          <div class="agent-divider"></div>
+          <div class="agent-chip" data-agent="alpha">
+            <span class="agent-dot" style="background: #f97316"></span>
+            <span>Alpha</span>
+          </div>
+          <div class="agent-chip" data-agent="beta">
+            <span class="agent-dot" style="background: #06b6d4"></span>
+            <span>Beta</span>
+          </div>
+          <div class="agent-chip" data-agent="gamma">
+            <span class="agent-dot" style="background: #a855f7"></span>
+            <span>Gamma</span>
+          </div>
+          <div class="agent-divider"></div>
+          <div class="agent-chip" data-agent="morocco">
+            <span class="agent-dot" style="background: #059669"></span>
+            <span>Morocco</span>
+          </div>
+        </div>
+
+        <div class="debate-messages" id="debate-messages"></div>
+      </section>
+    </section>
+
+    <!-- Tab: Best of Day -->
+    <section class="tab-content" id="panel-bestofday">
+      <div class="action-bar">
+        <div class="action-bar-left">
+          <h2>Best of Day Report</h2>
+          <p class="action-subtitle" id="bod-subtitle">Top ideas ranked by composite score across all hourly analyses</p>
+        </div>
+        <div class="action-bar-right">
+          <div class="bod-meta" id="bod-meta">
+            <span class="bod-stat" id="bod-runs">0 runs</span>
+            <span class="bod-stat" id="bod-analyzed">0 ideas</span>
+          </div>
+        </div>
+      </div>
+      <div class="ideas-grid" id="bod-grid">
+        <div class="empty-state">
+          <div class="empty-icon-svg">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+          </div>
+          <h3>Best of Day Not Available</h3>
+          <p>Best of Day rankings compile after multiple hourly analyses run. Check back later.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: Hall of Fame -->
+    <section class="tab-content" id="panel-halloffame">
+      <div class="action-bar">
+        <div class="action-bar-left">
+          <h2>⭐ Top Ideas — Hall of Fame</h2>
+          <p class="action-subtitle" id="hof-subtitle">All-time best ideas selected by the Master Curator LLM</p>
+        </div>
+        <div class="action-bar-right">
+          <div class="bod-meta">
+            <span class="bod-stat" id="hof-count">0 ideas</span>
+            <span class="hof-badge">LLM Curated</span>
+          </div>
+        </div>
+      </div>
+      <div class="ideas-grid" id="hof-grid">
+        <div class="empty-state" id="hof-empty">
+          <div class="empty-icon-svg">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+          </div>
+          <h3>Hall of Fame Is Empty</h3>
+          <p>Run analyses to let the Master Curator LLM evaluate ideas. Only the best make it here.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: History -->
+    <section class="tab-content" id="panel-history">
+      <div class="action-bar">
+        <div class="action-bar-left">
+          <h2>Analysis History</h2>
+          <p class="action-subtitle">Hourly analysis sessions</p>
+        </div>
+      </div>
+      <div class="history-list" id="history-list">
+        <div class="empty-history">No previous analyses found.</div>
+      </div>
+    </section>
+
+    <!-- Tab: Raw Intelligence Feed -->
+    <section class="tab-content" id="panel-intelligence">
+      <div class="action-bar">
+        <div class="action-bar-left">
+          <h2>🔭 Raw Intelligence Feed</h2>
+          <p class="action-subtitle">17 sources · Morocco-compatible digital startups · Proof of traction · <$500 to launch</p>
+        </div>
+        <div class="action-bar-right">
+          <span class="bod-stat" id="intel-total">0 items</span>
+          <span class="bod-stat" id="intel-age">—</span>
+          <button class="btn btn-secondary" id="btn-add-source">+ Add Source</button>
+          <button class="btn btn-primary" id="btn-refresh-intel">Refresh Cache</button>
+        </div>
+      </div>
+
+      <div class="intel-filter-bar">
+        <div class="intel-search-wrap">
+          <svg class="intel-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="intel-search" class="intel-search" placeholder="Search titles, descriptions…" autocomplete="off">
+        </div>
+        <div class="intel-source-filters" id="intel-source-filters">
+          <button class="source-filter-btn active" data-source="all">All Sources</button>
+          <div class="filter-divider"></div>
+          <button class="source-filter-btn" data-source="hackerNews" title="Hacker News Show HN">HN Show</button>
+          <button class="source-filter-btn" data-source="hackerNewsAsk" title="Hacker News Ask HN">HN Ask</button>
+          <button class="source-filter-btn" data-source="reddit" title="Reddit (13 subreddits)">Reddit</button>
+          <button class="source-filter-btn" data-source="productHunt" title="Product Hunt launches">Product Hunt</button>
+          <button class="source-filter-btn" data-source="indieHackers" title="Indie Hackers MRR milestones">Indie Hackers</button>
+          <div class="filter-divider"></div>
+          <button class="source-filter-btn" data-source="acquire" title="Acquire.com — micro-SaaS for sale">Acquire.com</button>
+          <button class="source-filter-btn" data-source="starterStory" title="Starter Story — proven business models">Starter Story</button>
+          <button class="source-filter-btn" data-source="explodingTopics" title="Exploding Topics — trends before they peak">Exploding Topics</button>
+          <button class="source-filter-btn" data-source="failory" title="Failory — startup post-mortems">Failory</button>
+          <button class="source-filter-btn" data-source="bootstrappedFounder" title="The Bootstrapped Founder">Bootstrapped</button>
+          <div class="filter-divider"></div>
+          <button class="source-filter-btn" data-source="devTo" title="DEV.to articles">DEV.to</button>
+          <button class="source-filter-btn" data-source="betaList" title="BetaList — new startup launches">BetaList</button>
+          <button class="source-filter-btn" data-source="lobsters" title="Lobsters — tech-focused">Lobsters</button>
+          <button class="source-filter-btn" data-source="appSumo" title="AppSumo — B2B SaaS deals">AppSumo</button>
+          <div class="filter-divider"></div>
+          <button class="source-filter-btn" data-source="githubTrending" title="GitHub Trending repos">GitHub</button>
+          <button class="source-filter-btn" data-source="ycombinator" title="Y Combinator W25 batch">YC W25</button>
+          <button class="source-filter-btn" data-source="googleTrends" title="Google Trends">Trends</button>
+        </div>
+      </div>
+
+      <div class="intel-stats-row" id="intel-stats-row"></div>
+      <div class="intel-feed" id="intel-feed">
+        <div class="empty-state">
+          <div class="empty-icon-svg">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </div>
+          <h3>No Intelligence Data Yet</h3>
+          <p>Click "Refresh Cache" to scrape all sources, or run an analysis to trigger scraping automatically.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+  <footer>
+    <div class="footer-content">
+      <p>VentureLens — Powered by <a href="https://groq.com" target="_blank" rel="noopener">Groq</a> | LLaMA 3.3 70B · Mixtral 8x7B · LLaMA 3.1 8B</p>
+      <p class="footer-sub">Autonomous multi-agent startup analysis engine. Runs every hour, 24/7.</p>
+    </div>
+  </footer>
+
+  <script src="/js/app.js"></script>
+
+  <!-- Add Source Modal -->
+  <div class="modal-overlay" id="add-source-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Add Custom Source</h3>
+        <button class="btn btn-ghost" id="btn-close-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-field">
+          <label class="modal-label">Source URL <span class="modal-required">*</span></label>
+          <input type="url" id="source-url" class="intel-search" placeholder="https://example.com/feed or /api/articles" style="width:100%">
+          <p class="modal-hint">RSS/Atom feed URL or JSON API endpoint</p>
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">Label</label>
+          <input type="text" id="source-label" class="intel-search" placeholder="My Custom Feed" style="width:100%">
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">Type</label>
+          <div class="modal-radio-group">
+            <label class="modal-radio"><input type="radio" name="source-type" value="rss" checked> RSS / Atom</label>
+            <label class="modal-radio"><input type="radio" name="source-type" value="json"> JSON API</label>
+          </div>
+        </div>
+        <div class="modal-test-result" id="modal-test-result" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-test-source">Test URL</button>
+        <button class="btn btn-primary" id="btn-save-source">Add Source</button>
+      </div>
+      <div class="modal-saved-sources" id="modal-saved-sources"></div>
+    </div>
+  </div>
+</body>
+</html>

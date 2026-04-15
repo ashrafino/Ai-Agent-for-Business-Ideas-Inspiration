@@ -1,0 +1,61 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  node_bundler = "esbuild"
+
+# ── Scheduled Functions ───────────────────────────────────────────────────────
+[functions."scheduled-analysis"]
+  schedule = "0 * * * *"
+  timeout = 300   # 5 min — 9 LLM rounds + scraping
+
+[functions."warm-scraper-cache"]
+  schedule = "0 */6 * * *"
+  timeout = 60    # 12 sources in parallel, needs headroom
+
+# ── API Function Timeouts ─────────────────────────────────────────────────────
+[functions."debate-round"]
+  timeout = 90    # single LLM round + optional scrape (cached)
+
+[functions."trigger-analysis"]
+  timeout = 300   # same as scheduled — full 9-round pipeline
+
+[functions."scrape-preview"]
+  timeout = 60    # scrape all sources (cached after first call)
+
+[functions."curate"]
+  timeout = 60    # one LLM call
+
+[functions."save-session"]
+  timeout = 15    # blobs write only, no LLM
+
+[functions."get-results"]
+  timeout = 10    # blobs read only
+
+[functions."health"]
+  timeout = 10
+
+# ── URL Redirects ─────────────────────────────────────────────────────────────
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# Fallback — serve index.html for any unmatched route (SPA behaviour)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"

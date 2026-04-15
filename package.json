@@ -1,0 +1,19 @@
+{
+  "name": "venture-lens",
+  "version": "1.0.0",
+  "description": "AI-Powered Autonomous Micro-VC Analyst using Groq multi-agent debates",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "echo 'Static site - no build step needed'"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^7.3.0",
+    "@netlify/functions": "^3.0.0",
+    "cheerio": "^1.2.0",
+    "mongodb": "^7.1.1"
+  }
+}
