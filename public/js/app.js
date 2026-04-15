@@ -500,6 +500,12 @@ async function startLiveDebate() {
       });
 
       debateContext += `\n\n=== ${CONTEXT_LABELS[round]} ===\n${result.content}`;
+
+      // Cap context to prevent token overflow on subsequent rounds
+      const MAX_CONTEXT = 6000;
+      if (debateContext.length > MAX_CONTEXT) {
+        debateContext = "[Earlier context truncated]\n..." + debateContext.slice(-MAX_CONTEXT);
+      }
       markAgentDone(agentKey);
 
       if (round === 5) {

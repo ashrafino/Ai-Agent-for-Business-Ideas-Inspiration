@@ -73,12 +73,12 @@ const MODELS = {
 // ── Rate limit config ─────────────────────────────────────────────────────────
 const RATE_LIMIT = {
   minDelayMs:       250,
-  maxRetries:       1,  // Reduced from 2 to 1 to avoid Netlify timeouts (free APIs fail fast anyway)
-  backoffBaseMs:    1000,  // Reduced from 2000 to 1000
+  maxRetries:       2,  // 2 retries for transient errors (debate-round has 90s timeout)
+  backoffBaseMs:    800,
   backoffMultiplier: 1.5,
 };
 
-const MAX_CONTEXT_CHARS = 4000;
+const MAX_CONTEXT_CHARS = 3000;
 let lastCallTimestamp = 0;
 
 // ── Build the full ordered attempt queue ─────────────────────────────────────
@@ -153,7 +153,7 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
       try {
         // Dynamic timeout management for Netlify
         // Netlify Functions have a hard 30s limit. We must ensure we don't exceed it.
-        let timeoutMs = 22000; // Default 22s
+        let timeoutMs = 28000; // Default 28s (up from 22s — debate-round has 90s total)
         if (netlifyContext?.getRemainingTimeInMillis) {
           const remaining = netlifyContext.getRemainingTimeInMillis();
           // We need at least 3s buffer for post-processing/returning

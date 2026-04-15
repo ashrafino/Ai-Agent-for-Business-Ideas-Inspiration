@@ -1,7 +1,6 @@
 import { AGENTS, JUDGING_PANEL, runRound } from "./lib/groq.mjs";
 import { scrapeAllSources, formatScrapedDataForLLM } from "./lib/scraper.mjs";
 import { getCuratedLists, queryIdeas } from "./lib/idea-storage.mjs";
-import { verifyAuth } from "./lib/storage.mjs";
 
 /**
  * Build context from database + live scrape
@@ -126,18 +125,18 @@ const ROUND_CONFIG = {
   },
   2: {
     agent: AGENTS.analyst,
-    prompt: (ctx) => `${ctx}\n\nAnalyze each of the 5 startup ideas from Scout. Reference the market data above to validate TAM, pricing, and competition. Provide specific numbers.`,
-    options: { maxTokens: 2048 },
+    prompt: (_ctx) => `Analyze each of the 5 startup ideas from Scout (in the context above). Validate TAM, pricing, and competition with specific numbers.`,
+    options: { maxTokens: 1500 },
   },
   3: {
     agent: AGENTS.critic,
-    prompt: (ctx) => `${ctx}\n\nChallenge every assumption in Scout's ideas and Analyst's evaluation. Use the market data above to find competitors or evidence that contradicts the thesis. Be direct. At the end of your analysis, provide a summary of risk scores for EACH idea in this format: [RISK_SCORES: Idea1=8, Idea2=4, ...]`,
-    options: { maxTokens: 1400 },
+    prompt: (_ctx) => `Challenge every assumption in Scout's ideas and Analyst's evaluation. Be direct. At the end, provide risk scores for EACH idea: [RISK_SCORES: Idea1=8, Idea2=4, ...]`,
+    options: { maxTokens: 1200 },
   },
   4: {
     agent: AGENTS.strategist,
-    prompt: (ctx) => `${ctx}\n\nProvide execution plans for each idea. Reference the specific tools/repos from the GitHub trending data above where relevant. Include Morocco-specific payment and legal solutions.`,
-    options: { maxTokens: 2048 },
+    prompt: (_ctx) => `Provide execution plans for each idea from the context above. Include Morocco-specific payment and legal solutions. Be tactical with exact tools and timelines.`,
+    options: { maxTokens: 1500 },
   },
   5: {
     agent: AGENTS.judge,
@@ -172,8 +171,8 @@ const ROUND_CONFIG = {
   },
 };
 
-// Rounds that benefit from seeing the raw market data
-const ROUNDS_WITH_MARKET_DATA = new Set([1, 2, 3, 4, 5]);
+// Only Round 1 needs fresh market data — subsequent rounds use the debate context
+const ROUNDS_WITH_MARKET_DATA = new Set([1]);
 
 export const handler = async (event, context) => {
   const headers = {
