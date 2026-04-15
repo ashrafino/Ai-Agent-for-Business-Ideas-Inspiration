@@ -7,11 +7,23 @@ Set these in **Netlify → Site Settings → Environment Variables**:
 | Variable | Value | Required |
 |---|---|---|
 | `GROQ_API_KEY` | Your Groq API key | ✅ Yes |
+| `PRODUCTHUNT_CLIENT_ID` | Your ProductHunt API Client ID | ✅ Yes |
+| `PRODUCTHUNT_CLIENT_SECRET` | Your ProductHunt API Client Secret | ✅ Yes |
 | `REDDIT_CLIENT_ID` | `Satoshi_Symbol` | ✅ Yes |
 | `REDDIT_CLIENT_SECRET` | `nsb6alMYaUffmQ` | ✅ Yes |
 | `REDDIT_USERNAME` | `ashrafinopass` | ✅ Yes |
 | `REDDIT_PASSWORD` | `b5fTNr@m%H)P~%G` | ✅ Yes |
 | `OPENROUTER_API_KEY` | Optional fallback LLM key | ⬜ Optional |
+| `MONGODB_URI` | MongoDB connection string | ⬜ Optional |
+
+### ProductHunt API Setup
+
+VentureLens now uses ProductHunt API for richer startup data. See [PRODUCTHUNT_API_SETUP.md](PRODUCTHUNT_API_SETUP.md) for detailed setup instructions.
+
+**Quick Setup:**
+1. Get credentials from [ProductHunt API Applications](https://www.producthunt.com/v2/oauth/applications)
+2. Add `PRODUCTHUNT_CLIENT_ID` and `PRODUCTHUNT_CLIENT_SECRET` to Netlify environment variables
+3. If credentials are missing, the system automatically falls back to RSS feed
 
 ## Deploy Steps
 

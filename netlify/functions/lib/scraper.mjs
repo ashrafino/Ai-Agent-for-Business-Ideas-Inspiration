@@ -139,6 +139,7 @@ export async function scrapeAllSources({ isSubRound = false, customSources = [] 
   // We'll do a fresh scrape but log a warning.
   if (isSubRound) console.warn("[Scraper] Sub-round requested but cache missing/stale. Fresh scrape forced.");
 
+  // Use Promise.allSettled for parallel execution with graceful degradation
   const [hn, hnAsk, reddit, ph, ih, ghTrending, trends, yc, devTo, betaList, lobsters, appSumo, starterStory] =
     await Promise.allSettled([
       scrapeHackerNews(),
@@ -156,30 +157,61 @@ export async function scrapeAllSources({ isSubRound = false, customSources = [] 
       scrapeStarterStory(),
     ]);
 
-  // Scrape any custom user-added sources
+  // Scrape any custom user-added sources with individual timeouts
   const customResults = await Promise.allSettled(
     customSources.map((src) => scrapeCustomSource(src))
   );
 
+  // Helper to extract result with error logging
+  const extractResult = (result, sourceName, defaultValue) => {
+    if (result.status === "fulfilled") {
+      return result.value;
+    }
+    // Log failure with context
+    console.error(`[Scraper] ${sourceName} failed:`, {
+      error: result.reason?.message || String(result.reason),
+      source: sourceName,
+      timestamp: new Date().toISOString(),
+    });
+    return { ...defaultValue, error: result.reason?.message || String(result.reason) };
+  };
+
   const scraped = {
-    hackerNews:      hn.status      === "fulfilled" ? hn.value      : { posts: [], error: hn.reason?.message },
-    hackerNewsAsk:   hnAsk.status   === "fulfilled" ? hnAsk.value   : { posts: [], error: hnAsk.reason?.message },
-    reddit:          reddit.status  === "fulfilled" ? reddit.value  : { posts: [], error: reddit.reason?.message },
-    productHunt:     ph.status      === "fulfilled" ? ph.value      : { posts: [], error: ph.reason?.message },
-    indieHackers:    ih.status      === "fulfilled" ? ih.value      : { posts: [], error: ih.reason?.message },
-    githubTrending:  ghTrending.status === "fulfilled" ? ghTrending.value : { repos: [], error: ghTrending.reason?.message },
-    googleTrends:    trends.status  === "fulfilled" ? trends.value  : { trends: [], error: trends.reason?.message },
-    ycombinator:     yc.status      === "fulfilled" ? yc.value      : { companies: [], error: yc.reason?.message },
-    devTo:           devTo.status   === "fulfilled" ? devTo.value   : { posts: [], error: devTo.reason?.message },
-    betaList:        betaList.status === "fulfilled" ? betaList.value : { posts: [], error: betaList.reason?.message },
-    lobsters:        lobsters.status === "fulfilled" ? lobsters.value : { posts: [], error: lobsters.reason?.message },
-    appSumo:         appSumo.status === "fulfilled" ? appSumo.value : { posts: [], error: appSumo.reason?.message },
-    starterStory:    starterStory.status === "fulfilled" ? starterStory.value : { posts: [], error: starterStory.reason?.message },
-    custom: customResults.map((r, i) => ({
-      ...(r.status === "fulfilled" ? r.value : { posts: [], error: r.reason?.message }),
-      sourceUrl: customSources[i]?.url,
-      sourceLabel: customSources[i]?.label || customSources[i]?.url,
-    })),
+    hackerNews:      extractResult(hn, "Hacker News Show HN", { posts: [] }),
+    hackerNewsAsk:   extractResult(hnAsk, "Hacker News Ask HN", { posts: [] }),
+    reddit:          extractResult(reddit, "Reddit", { posts: [] }),
+    productHunt:     extractResult(ph, "Product Hunt", { posts: [] }),
+    indieHackers:    extractResult(ih, "Indie Hackers", { posts: [] }),
+    githubTrending:  extractResult(ghTrending, "GitHub Trending", { repos: [] }),
+    googleTrends:    extractResult(trends, "Google Trends", { trends: [] }),
+    ycombinator:     extractResult(yc, "Y Combinator", { companies: [] }),
+    devTo:           extractResult(devTo, "DEV.to", { posts: [] }),
+    betaList:        extractResult(betaList, "BetaList", { posts: [] }),
+    lobsters:        extractResult(lobsters, "Lobsters", { posts: [] }),
+    appSumo:         extractResult(appSumo, "AppSumo", { posts: [] }),
+    starterStory:    extractResult(starterStory, "StarterStory", { posts: [] }),
+    custom: customResults.map((r, i) => {
+      if (r.status === "fulfilled") {
+        return {
+          ...r.value,
+          sourceUrl: customSources[i]?.url,
+          sourceLabel: customSources[i]?.label || customSources[i]?.url,
+        };
+      }
+      // Log custom source failure
+      console.error(`[Scraper] Custom source failed:`, {
+        error: r.reason?.message || String(r.reason),
+        source: customSources[i]?.label || customSources[i]?.url,
+        url: customSources[i]?.url,
+        timestamp: new Date().toISOString(),
+      });
+      return {
+        posts: [],
+        error: r.reason?.message || String(r.reason),
+        sourceUrl: customSources[i]?.url,
+        sourceLabel: customSources[i]?.label || customSources[i]?.url,
+      };
+    }),
     scrapedAt: new Date().toISOString(),
     durationMs: Date.now() - startTime,
   };
@@ -187,10 +219,31 @@ export async function scrapeAllSources({ isSubRound = false, customSources = [] 
   const total = countTotal(scraped);
   console.log(`[Scraper] Complete: ${total} items in ${scraped.durationMs}ms`);
   
-  // DUMP TRUCK: Save everything to our MongoDB Data Lake for future reference!
-  await saveScrapeToDB(scraped);
+  // Persist raw data to MongoDB data lake (even if some sources failed)
+  try {
+    await saveScrapeToDB(scraped);
+    console.log("[Scraper] Raw data persisted to MongoDB");
+  } catch (err) {
+    console.error("[Scraper] Failed to persist raw data:", {
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+    // Continue execution - persistence failure shouldn't block the scrape
+  }
   
-  if (customSources.length === 0) await saveToCache(scraped);
+  // Cache the results (only for non-custom scrapes)
+  if (customSources.length === 0) {
+    try {
+      await saveToCache(scraped);
+    } catch (err) {
+      console.error("[Scraper] Failed to save cache:", {
+        error: err.message,
+        timestamp: new Date().toISOString(),
+      });
+      // Continue execution - cache failure shouldn't block the scrape
+    }
+  }
+  
   return scraped;
 }
 
@@ -213,16 +266,30 @@ function countTotal(scraped) {
   );
 }
 
-// ── Cache ─────────────────────────────────────────────────────────────────────
+// ── Cache with TTL validation ─────────────────────────────────────────────────
 async function loadFromCache() {
   try {
     const store = getStore("venture-lens-scraper-cache");
     const cached = await store.get(CACHE_KEY, { type: "json" });
-    if (!cached?.scrapedAt) return null;
-    const age = Date.now() - new Date(cached.scrapedAt).getTime();
-    if (age > CACHE_TTL_MS) { console.log(`[Scraper] Cache expired`); return null; }
+    
+    if (!cached?.scrapedAt) {
+      console.log("[Scraper] No cache found");
+      return null;
+    }
+    
+    // Validate cache TTL
+    const cacheAge = Date.now() - new Date(cached.scrapedAt).getTime();
+    if (cacheAge > CACHE_TTL_MS) {
+      console.log(`[Scraper] Cache expired (age: ${Math.round(cacheAge / 60000)}min, TTL: ${CACHE_TTL_MS / 60000}min)`);
+      return null;
+    }
+    
+    console.log(`[Scraper] Valid cache found (age: ${Math.round(cacheAge / 60000)}min)`);
     return cached;
-  } catch (_) { return null; }
+  } catch (err) {
+    console.warn("[Scraper] Cache read failed:", err.message);
+    return null;
+  }
 }
 
 async function saveToCache(data) {
@@ -303,7 +370,12 @@ async function scrapeRedditOAuth(token) {
   const posts = [];
   for (let i = 0; i < results.length; i++) {
     if (results[i].status !== "fulfilled") {
-      console.warn(`[Scraper] Reddit r/${REDDIT_SUBS[i].sub} failed`);
+      console.error(`[Scraper] Reddit subreddit failed:`, {
+        subreddit: `r/${REDDIT_SUBS[i].sub}`,
+        error: results[i].reason?.message || String(results[i].reason),
+        url: `https://oauth.reddit.com/r/${REDDIT_SUBS[i].sub}/${REDDIT_SUBS[i].sort}`,
+        timestamp: new Date().toISOString(),
+      });
       continue;
     }
     const children = results[i].value?.data?.children || [];
@@ -356,7 +428,11 @@ async function scrapeRedditOAuth(token) {
             p.description = `${p.description}\n[TOP COMMENTS]: ${topComments}`;
           }
         } catch (err) {
-          console.warn(`[Scraper] Failed to fetch comments for ${p.url}:`, err.message);
+          console.error(`[Scraper] Reddit comment fetch failed:`, {
+            url: p.url,
+            error: err.message,
+            timestamp: new Date().toISOString(),
+          });
         }
       })
     );
@@ -387,19 +463,198 @@ async function scrapeRedditRss() {
   return { posts: filtered, source: "Reddit RSS" };
 }
 
+// ── Product Hunt OAuth token cache (in-memory, per cold start) ───────────────
+let _productHuntToken = null;
+let _productHuntTokenExpiry = 0;
+
+async function getProductHuntToken() {
+  if (_productHuntToken && Date.now() < _productHuntTokenExpiry) return _productHuntToken;
+
+  const clientId = process.env.PRODUCTHUNT_CLIENT_ID;
+  const clientSecret = process.env.PRODUCTHUNT_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    console.warn("[Scraper] ProductHunt API credentials not set — falling back to RSS");
+    return null;
+  }
+
+  try {
+    const res = await fetch("https://api.producthunt.com/v2/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "client_credentials",
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[Scraper] ProductHunt OAuth failed (${res.status}): ${errText}`);
+      return null;
+    }
+
+    const data = await res.json();
+    if (data.error) {
+      console.warn(`[Scraper] ProductHunt OAuth error: ${data.error}`);
+      return null;
+    }
+
+    _productHuntToken = data.access_token;
+    _productHuntTokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+    console.log(`[Scraper] ProductHunt token acquired (expires in ${data.expires_in}s)`);
+    return _productHuntToken;
+  } catch (err) {
+    console.error("[Scraper] ProductHunt OAuth failed:", {
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+    return null;
+  }
+}
+
 // ── Product Hunt ──────────────────────────────────────────────────────────────
 async function scrapeProductHunt() {
-  const xml = await fetchText(SOURCES.productHuntRss);
-  const posts = parseRss(xml, "producthunt")
-    .map((p) => ({
-      ...p,
-      upvotes: parseUpvotes(p.description),
-      tags: PH_TAG_HINTS.filter((tag) => `${p.title} ${p.description}`.toLowerCase().includes(tag)),
-    }))
-    .filter((p) => p.tags.length > 0 || p.upvotes > 0)
-    .slice(0, 20);
-  console.log(`[Scraper] Product Hunt: ${posts.length}`);
-  return { posts, source: "Product Hunt RSS" };
+  const token = await getProductHuntToken();
+
+  if (token) {
+    return scrapeProductHuntAPI(token);
+  }
+  // Fallback to RSS if no credentials
+  return scrapeProductHuntRss();
+}
+
+async function scrapeProductHuntAPI(token) {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    // GraphQL query to fetch posts from last 7 days
+    const query = `
+      query {
+        posts(order: VOTES, postedAfter: "${sevenDaysAgo}", first: 50) {
+          edges {
+            node {
+              id
+              name
+              tagline
+              description
+              votesCount
+              commentsCount
+              url
+              website
+              createdAt
+              featuredAt
+              topics {
+                edges {
+                  node {
+                    name
+                  }
+                }
+              }
+              user {
+                name
+                username
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const res = await fetch("https://api.producthunt.com/v2/api/graphql", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.error("[Scraper] ProductHunt API request failed:", {
+        status: res.status,
+        error: errText,
+        timestamp: new Date().toISOString(),
+      });
+      return scrapeProductHuntRss();
+    }
+
+    const data = await res.json();
+    
+    if (data.errors) {
+      console.error("[Scraper] ProductHunt GraphQL errors:", {
+        errors: data.errors,
+        timestamp: new Date().toISOString(),
+      });
+      return scrapeProductHuntRss();
+    }
+
+    const posts = (data?.data?.posts?.edges || [])
+      .map(({ node }) => {
+        const topics = (node.topics?.edges || []).map(e => e.node.name);
+        const maker = node.user ? (node.user.name || node.user.username) : "";
+        
+        return {
+          title: node.name,
+          tagline: node.tagline || "",
+          description: node.description || node.tagline || "",
+          url: node.website || node.url,
+          upvotes: node.votesCount || 0,
+          comments: node.commentsCount || 0,
+          topics: topics,
+          makers: maker ? [maker] : [],
+          featuredAt: node.featuredAt,
+          createdAt: node.createdAt,
+          source: "producthunt-api",
+        };
+      })
+      .filter((p) => p.upvotes > 50) // Filter for high-quality posts
+      .filter((p) => {
+        // Filter by relevant topics or keywords
+        const text = `${p.title} ${p.description} ${p.topics.join(" ")}`.toLowerCase();
+        return PH_TAG_HINTS.some(hint => text.includes(hint));
+      })
+      .slice(0, 25);
+
+    console.log(`[Scraper] Product Hunt API: ${posts.length} posts`);
+    return { posts, source: "Product Hunt API" };
+  } catch (err) {
+    console.error("[Scraper] ProductHunt API scraping failed:", {
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+    return scrapeProductHuntRss();
+  }
+}
+
+async function scrapeProductHuntRss() {
+  try {
+    const xml = await fetchText(SOURCES.productHuntRss);
+    const posts = parseRss(xml, "producthunt")
+      .map((p) => ({
+        ...p,
+        upvotes: parseUpvotes(p.description),
+        tags: PH_TAG_HINTS.filter((tag) => `${p.title} ${p.description}`.toLowerCase().includes(tag)),
+      }))
+      .filter((p) => p.tags.length > 0 || p.upvotes > 0)
+      .slice(0, 20);
+    console.log(`[Scraper] Product Hunt RSS: ${posts.length}`);
+    return { posts, source: "Product Hunt RSS" };
+  } catch (err) {
+    console.error("[Scraper] ProductHunt RSS scraping failed:", {
+      error: err.message,
+      url: SOURCES.productHuntRss,
+      timestamp: new Date().toISOString(),
+    });
+    return { posts: [], source: "Product Hunt RSS" };
+  }
 }
 
 // ── Indie Hackers ─────────────────────────────────────────────────────────────
@@ -473,7 +728,11 @@ async function scrapeLobsters() {
     console.log(`[Scraper] Lobsters: ${posts.length}`);
     return { posts, source: "Lobsters" };
   } catch (err) {
-    console.warn("[Scraper] Lobsters failed:", err.message);
+    console.error("[Scraper] Lobsters scraping failed:", {
+      error: err.message,
+      url: SOURCES.lobsters,
+      timestamp: new Date().toISOString(),
+    });
     return { posts: [], source: "Lobsters" };
   }
 }
@@ -486,7 +745,11 @@ async function scrapeAppSumo() {
     console.log(`[Scraper] AppSumo: ${posts.length}`);
     return { posts, source: "AppSumo" };
   } catch (err) {
-    console.warn("[Scraper] AppSumo failed:", err.message);
+    console.error("[Scraper] AppSumo scraping failed:", {
+      error: err.message,
+      url: SOURCES.appSumoRss,
+      timestamp: new Date().toISOString(),
+    });
     return { posts: [], source: "AppSumo" };
   }
 }
@@ -501,7 +764,11 @@ async function scrapeStarterStory() {
     console.log(`[Scraper] StarterStory: ${posts.length}`);
     return { posts, source: "StarterStory" };
   } catch (err) {
-    console.warn("[Scraper] StarterStory failed:", err.message);
+    console.error("[Scraper] StarterStory scraping failed:", {
+      error: err.message,
+      url: SOURCES.starterStoryRss,
+      timestamp: new Date().toISOString(),
+    });
     return { posts: [], source: "StarterStory" };
   }
 }
@@ -530,7 +797,13 @@ export async function scrapeCustomSource(src) {
       return { posts, source: label };
     }
   } catch (err) {
-    console.warn(`[Scraper] Custom source ${url} failed:`, err.message);
+    console.error(`[Scraper] Custom source scraping failed:`, {
+      error: err.message,
+      url: url,
+      label: label,
+      type: type,
+      timestamp: new Date().toISOString(),
+    });
     return { posts: [], source: label, error: err.message };
   }
 }
@@ -544,7 +817,11 @@ async function scrapeGithubTrending() {
       return { repos, source: "GitHub Trending" };
     }
   } catch (err) {
-    console.warn("[Scraper] GitHub HTML failed:", err.message);
+    console.error("[Scraper] GitHub HTML scraping failed:", {
+      error: err.message,
+      url: SOURCES.githubTrendingHtml,
+      timestamp: new Date().toISOString(),
+    });
   }
   for (const apiUrl of SOURCES.githubTrendingApis) {
     try {
@@ -564,7 +841,13 @@ async function scrapeGithubTrending() {
           .slice(0, 20);
         return { repos, source: "GitHub Trending" };
       }
-    } catch (_) { /* try next */ }
+    } catch (err) {
+      console.error("[Scraper] GitHub API scraping failed:", {
+        error: err.message,
+        url: apiUrl,
+        timestamp: new Date().toISOString(),
+      });
+    }
   }
   return { repos: [], source: "GitHub Trending" };
 }
@@ -641,7 +924,11 @@ async function scrapeYCombinator() {
     console.log(`[Scraper] YC: ${filtered.length}`);
     return { companies: filtered, source: "Y Combinator W25" };
   } catch (err) {
-    console.warn("[Scraper] YC failed:", err.message);
+    console.error("[Scraper] Y Combinator scraping failed:", {
+      error: err.message,
+      url: SOURCES.ycCompanies,
+      timestamp: new Date().toISOString(),
+    });
     return { companies: [], source: "Y Combinator W25", error: err.message };
   }
 }
@@ -794,7 +1081,7 @@ function collectNames(node, out) {
   }
 }
 
-// ── HTTP Helpers ──────────────────────────────────────────────────────────────
+// ── HTTP Helpers with timeout enforcement ────────────────────────────────────
 async function fetchWithTimeout(url, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -810,10 +1097,24 @@ async function fetchWithTimeout(url, options = {}) {
       },
     });
     clearTimeout(timer);
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
+    if (!res.ok) {
+      const error = new Error(`HTTP ${res.status}: ${url}`);
+      error.status = res.status;
+      error.url = url;
+      throw error;
+    }
     return res;
   } catch (err) {
     clearTimeout(timer);
+    // Add context to timeout errors
+    if (err.name === 'AbortError') {
+      const timeoutError = new Error(`Timeout after ${FETCH_TIMEOUT_MS}ms: ${url}`);
+      timeoutError.url = url;
+      timeoutError.timeout = FETCH_TIMEOUT_MS;
+      throw timeoutError;
+    }
+    // Add URL context to other errors
+    if (!err.url) err.url = url;
     throw err;
   }
 }

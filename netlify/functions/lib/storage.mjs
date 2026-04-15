@@ -87,9 +87,14 @@ export async function saveScrapeToDB(scrapedData) {
       scrapedAt: new Date().toISOString(),
       data: scrapedData,
     });
-    console.log("[Storage] Raw scrape cleanly persisted to MongoDB data lake.");
+    console.log("[Storage] Raw scrape persisted to MongoDB data lake");
   } catch (err) {
-    console.error("[Storage] Failed saving raw scrape to MongoDB:", err.message);
+    console.error("[Storage] Failed to save raw scrape to MongoDB:", {
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+    // Re-throw to allow caller to handle
+    throw err;
   }
 }
 
