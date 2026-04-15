@@ -8,7 +8,12 @@
   },
   "scripts": {
     "dev": "netlify dev",
-    "build": "echo 'Static site - no build step needed'"
+    "build": "echo 'Static site - no build step needed'",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --testPathPatterns='netlify/functions' --forceExit"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {}
   },
   "dependencies": {
     "@netlify/blobs": "^7.3.0",
@@ -17,5 +22,10 @@
     "cheerio": "^1.2.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^7.1.1"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.3.0",
+    "fast-check": "^4.6.0",
+    "jest": "^30.3.0"
   }
 }

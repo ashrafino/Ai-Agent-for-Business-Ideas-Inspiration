@@ -26,7 +26,7 @@ VentureLens is a startup idea discovery tool that scrapes 17+ open-source data s
 
 ### Requirement 1: User Interest Profile
 
-**User Story:** As a user, I want to specify my interests and background so that VentureLens surfaces startup ideas relevant to me rather than generic results.
+**User Story:** As a user, I want to specify my interests and background so that VentureLens surfaces startup ideas relevant to me and my startup contry/location rather than generic results.
 
 #### Acceptance Criteria
 
