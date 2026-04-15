@@ -191,9 +191,10 @@ export const handler = async (event, context) => {
   try {
     // 🔒 Enforce Authentication
     const user = verifyAuth(event);
+    
+    const { round, context: debateHistory } = JSON.parse(event.body);
     console.log(`[VentureLens] Authorized debate round ${round} for ${user.email}`);
 
-    const { round: r, context: debateHistory } = JSON.parse(event.body);
     const config = ROUND_CONFIG[round];
 
     if (!config) {
