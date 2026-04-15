@@ -78,8 +78,8 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
 - [x] 5. Checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [~] 6. Implement `rate-limit.mjs` — Sliding-Window Rate Limiting
-  - [~] 6.1 Create `netlify/functions/lib/rate-limit.mjs` with `checkRateLimit(userId, ip)`
+- [-] 6. Implement `rate-limit.mjs` — Sliding-Window Rate Limiting
+  - [-] 6.1 Create `netlify/functions/lib/rate-limit.mjs` with `checkRateLimit(userId, ip)`
     - Reads `rate_limits` collection; prunes timestamps older than 60 min; if count >= 10 (authenticated) or >= 3 (unauthenticated/IP), returns `{ allowed: false, retryAfterSeconds: N }`; otherwise appends current timestamp and returns `{ allowed: true }`
     - On DB failure: fail open (allow request) and log warning
     - Must complete within 200 ms including MongoDB read + write
@@ -144,7 +144,7 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
     - `GET /source-quality`: verify JWT (authenticated users only); call `getAllSourceQuality()`; return array of records
     - _Requirements: 6.4_
 
-- [ ] 13. Modify `scrape-preview.mjs` — Wire rate limiting, profile loading, and user cache
+- [~] 13. Modify `scrape-preview.mjs` — Wire rate limiting, profile loading, and user cache
   - Import `verifyAuth` from `storage.mjs`, `checkRateLimit` from `rate-limit.mjs`, `getProfile` / `getDefaultWeights` from `user-profile.mjs`, `getUserCache` / `setUserCache` / `rankItemsForUser` from `relevance.mjs`, `formatForUser` / `formatFallback` from `llm-formatter.mjs`, and `upsertSourceQuality` from `source-quality.mjs`
   - Add domain filter support: read `domains[]` from request body; validate against `INTEREST_DOMAINS`; return `400` for unknown values; apply Optimizer domain filter (threshold 30, fallback to 10 if < 5 items pass)
   - Implement the full request flow from the design §Request Flow: auth → rate limit → load profile → check user cache → (on miss) score + cache → format → return
@@ -162,7 +162,7 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
     - Generate strings not in `INTEREST_DOMAINS`; verify the handler returns HTTP status `400` with a descriptive error
     - **Validates: Requirements 8.5**
 
-- [ ] 14. Final checkpoint — Ensure all tests pass
+- [~] 14. Final checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
