@@ -144,7 +144,7 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
     - `GET /source-quality`: verify JWT (authenticated users only); call `getAllSourceQuality()`; return array of records
     - _Requirements: 6.4_
 
-- [-] 13. Modify `scrape-preview.mjs` — Wire rate limiting, profile loading, and user cache
+- [x] 13. Modify `scrape-preview.mjs` — Wire rate limiting, profile loading, and user cache
   - Import `verifyAuth` from `storage.mjs`, `checkRateLimit` from `rate-limit.mjs`, `getProfile` / `getDefaultWeights` from `user-profile.mjs`, `getUserCache` / `setUserCache` / `rankItemsForUser` from `relevance.mjs`, `formatForUser` / `formatFallback` from `llm-formatter.mjs`, and `upsertSourceQuality` from `source-quality.mjs`
   - Add domain filter support: read `domains[]` from request body; validate against `INTEREST_DOMAINS`; return `400` for unknown values; apply Optimizer domain filter (threshold 30, fallback to 10 if < 5 items pass)
   - Implement the full request flow from the design §Request Flow: auth → rate limit → load profile → check user cache → (on miss) score + cache → format → return
@@ -162,7 +162,7 @@ All new code is JavaScript (ESM `.mjs`), targeting Netlify Functions + MongoDB A
     - Generate strings not in `INTEREST_DOMAINS`; verify the handler returns HTTP status `400` with a descriptive error
     - **Validates: Requirements 8.5**
 
-- [~] 14. Final checkpoint — Ensure all tests pass
+- [x] 14. Final checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
