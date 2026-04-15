@@ -74,12 +74,13 @@ const MODELS = {
 // ── Rate limit config ─────────────────────────────────────────────────────────
 const RATE_LIMIT = {
   minDelayMs:        1500, // Wait 1.5s between calls to avoid Groq RPM exhaustion across rounds
-  maxRetries:        2,
+  maxRetries:        1,    // Only 1 retry — fail fast and move to next model/provider
   backoffBaseMs:     800,
   backoffMultiplier: 1.5,
 };
 
-const MAX_CONTEXT_CHARS = 3000;
+const MAX_CONTEXT_CHARS = 2000; // Tighter: prevents token overflow on small free models
+const MAX_SCRAPE_CHARS  = 1500; // Scrape context injected once (Round 1 only)
 let lastCallTimestamp = 0;
 
 // ── Build the full ordered attempt queue ─────────────────────────────────────
@@ -196,7 +197,13 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
 
           if ((isTransient || isOpenRouterFlaky) && attempt < RATE_LIMIT.maxRetries) {
             const wait = RATE_LIMIT.backoffBaseMs * Math.pow(RATE_LIMIT.backoffMultiplier, attempt);
-            console.warn(`[${provider}] Transient error (${response.status}, isHtml=${isHtml}) on ${currentModel}. Retrying in ${wait}ms...`);
+            // On 429 from Groq/Gemini, skip immediately to next model rather than waiting
+            if (response.status === 429 && !isGroq) {
+              console.warn(`[${provider}] Rate limited (429) on ${currentModel}. Trying next model immediately.`);
+              failedModels.add(currentModel);
+              break;
+            }
+            console.warn(`[${provider}] Transient error (${response.status}) on ${currentModel}. Retrying in ${wait}ms...`);
             await delay(wait);
             continue;
           }
@@ -540,27 +547,27 @@ export async function runRound(agent, userMessage, previousContext = "", options
   const messages = [{ role: "system", content: agent.systemPrompt }];
 
   if (previousContext) {
-    // Truncate context to prevent token overflow and timeouts
+    // Aggressive truncation — keep only the TAIL of context (most recent = most relevant)
     let ctx = previousContext;
     if (ctx.length > MAX_CONTEXT_CHARS) {
-      ctx = "[Earlier context truncated for brevity]\n..." + ctx.slice(-MAX_CONTEXT_CHARS);
+      ctx = "[Earlier rounds summarized — focusing on most recent context]\n..." + ctx.slice(-MAX_CONTEXT_CHARS);
     }
     messages.push({
       role: "user",
-      content: `Here is the context from previous analysis rounds:\n\n${ctx}`,
+      content: `Context from previous rounds (summarized):\n\n${ctx}`,
     });
     messages.push({
       role: "assistant",
-      content: "Understood. I've reviewed the context. Proceeding with my assessment.",
+      content: "Understood. Proceeding.",
     });
   }
 
   messages.push({ role: "user", content: userMessage });
 
   return callGroq(messages, {
-    temperature: options.temperature || 0.75,
-    maxTokens: options.maxTokens || 1024,
-    model: options.model || MODELS.primary,
+    temperature: options.temperature ?? 0.7,
+    maxTokens:   options.maxTokens   ?? 800,  // Default 800 — sufficient for structured output
+    model:       options.model       || MODELS.primary,
     netlifyContext: options.netlifyContext,
   });
 }
@@ -651,54 +658,64 @@ export async function runFullDebate(options = {}) {
   }
 
   // === PHASE 1: 5-Agent Debate ===
-
-  // Phase 1: 5-Agent Debate
+  // Context is built incrementally but aggressively summarized at each step
+  // to keep tokens under control on free tier models.
   const runAgentRound = async (roundNum, agentKey, prompt, agentContext, opts = {}) => {
     const agent = AGENTS[agentKey];
-    console.log(`[VentureLens] Phase 1 — Round ${roundNum}: ${agent.name} ${agent.role}...`);
+    console.log(`[VentureLens] Phase 1 — Round ${roundNum}: ${agent.name}...`);
     try {
       const result = await runRound(agent, prompt, agentContext, { ...opts, netlifyContext: options.netlifyContext });
       debateLog.push({ round: roundNum, agent: agentKey, content: result, timestamp: new Date().toISOString() });
-      context += `\n\n=== ${agent.name.toUpperCase()}'S ${agent.role.toUpperCase()} ===\n${result}`;
+      // Append a compact summary line, not the full output, to keep context lean
+      const summaryLine = result.length > 600 ? result.slice(0, 600) + "..." : result;
+      context += `\n\n=== ${agent.name.toUpperCase()} (Round ${roundNum}) ===\n${summaryLine}`;
       return result;
     } catch (err) {
       console.error(`[VentureLens] Round ${roundNum} (${agentKey}) failed:`, err.message);
-      const errorContent = `[AGENT ERROR] ${agent.name} was unable to respond. Error: ${err.message}. Analysis will attempt to proceed with previous context.`;
-      debateLog.push({ round: roundNum, agent: agentKey, content: errorContent, timestamp: new Date().toISOString(), isError: true });
-      context += `\n\n=== ${agent.name.toUpperCase()} (FAILED) ===\n${errorContent}`;
+      const errorContent = `[${agent.name} skipped — model error]`;
+      debateLog.push({ round: roundNum, agent: agentKey, content: err.message, timestamp: new Date().toISOString(), isError: true });
+      context += `\n\n=== ${agent.name.toUpperCase()} (SKIPPED) ===\n${errorContent}`;
       return null;
     }
   };
 
-  // Round 1: Scout
-  const scoutPrompt = scrapedContext
-    ? `${scrapedContext}\n\nUsing ONLY the real market data above, extract 5 micro-startup opportunities:\n1. Reddit/HN Ask pain points where people say "need a tool", "paying for", "wish there was"\n2. Product Hunt category gaps — what's missing or underserved?\n3. Indie Hackers MRR patterns worth replicating in a niche\n4. GitHub trending tools to wrap as managed SaaS\n5. YC W25 companies — build the cheaper/niche alternative\n\nCite SPECIFIC post titles, product names, or MRR figures as evidence. NO invented demand.`
-    : "Identify 5 hyper-specific micro-startup opportunities for a data engineer in Morocco (under $500 to launch). Focus on AI wrappers, micro-SaaS, and productized data services with proven market demand.";
-  await runAgentRound(1, "scout", scoutPrompt, "");
+  // Build compact scrape context (truncated) — injected ONLY into Round 1
+  const compactScrape = scrapedContext.length > MAX_SCRAPE_CHARS
+    ? scrapedContext.slice(0, MAX_SCRAPE_CHARS) + "\n[...data truncated for token efficiency]"
+    : scrapedContext;
 
-  // Round 2: Analyst
-  await runAgentRound(2, "analyst", 
-    `${scrapedContext ? scrapedContext + "\n\n" : ""}Analyze each of the 5 startup ideas identified by Scout. Reference the market data above to validate TAM, pricing, and competition. Provide specific numbers.`,
-    context
-  );
+  // Round 1: Scout — inject full scrape context here ONLY
+  const scoutPrompt = compactScrape
+    ? `${compactScrape}\n\nFrom this market data, extract 5 micro-startup opportunities. Cite specific post titles or product names as evidence. Each idea should have: Name, Concept, Evidence, Why under $500, Unfair Advantage.`
+    : "Find 5 micro-startup ideas for a Morocco-based data engineer (under $500 launch). Focus on AI wrappers, micro-SaaS, productized data services with proven demand.";
+  await runAgentRound(1, "scout", scoutPrompt, "", { maxTokens: 900 });
 
-  // Round 3: Critic
-  await runAgentRound(3, "critic",
-    `${scrapedContext ? scrapedContext + "\n\n" : ""}Challenge every assumption in Scout's ideas and Analyst's evaluation. Use the market data above to find competitors or evidence that contradicts the thesis. Be direct.`,
-    context
-  );
-
-  // Round 4: Strategist
-  await runAgentRound(4, "strategist",
-    `${scrapedContext ? scrapedContext + "\n\n" : ""}Provide execution plans for each idea. Reference specific tools/repos from the GitHub trending data above where relevant. Include Morocco-specific payment and legal solutions. Focus on what a Morocco-based data engineer can do in 4 weeks with $500.`,
-    context
-  );
-
-  // Round 5: Initial Judge
-  const judgeResult = await runAgentRound(5, "judge",
-    "Review ALL previous rounds. Produce your initial classification as a JSON array. Output ONLY valid JSON.",
+  // Round 2: Analyst — context only (no scrape re-injection)
+  await runAgentRound(2, "analyst",
+    "Analyze the 5 Scout ideas: validate TAM, pricing, competition. Give specific numbers.",
     context,
-    { maxTokens: 1200 }
+    { maxTokens: 700 }
+  );
+
+  // Round 3: Critic — context only
+  await runAgentRound(3, "critic",
+    "Find fatal flaws in each idea. Be brutally honest. Assign a risk score (1-10) for each.",
+    context,
+    { maxTokens: 600 }
+  );
+
+  // Round 4: Strategist — context only
+  await runAgentRound(4, "strategist",
+    "Provide a 4-week launch plan and Morocco-specific execution guide for each surviving idea. Include exact tech stack and costs.",
+    context,
+    { maxTokens: 700 }
+  );
+
+  // Round 5: Initial Judge — JSON only
+  const judgeResult = await runAgentRound(5, "judge",
+    "Classify all 5 ideas as JSON. Output ONLY the JSON array, no other text.",
+    context,
+    { maxTokens: 1000, temperature: 0.2 } // Low temp for reliable JSON
   );
 
   // Parse initial ideas (fallback if judge failed)
@@ -740,13 +757,13 @@ export async function runFullDebate(options = {}) {
   };
 
   // Round 6: Judge Alpha
-  const alphaResult = await runJudgeRound(6, "alpha", classifiedIdeas, context);
+  const alphaResult = await runJudgeRound(6, "alpha", classifiedIdeas, ""); // no debate ctx — saves tokens
 
   // Round 7: Judge Beta
-  const betaResult = await runJudgeRound(7, "beta", classifiedIdeas, context);
+  const betaResult  = await runJudgeRound(7, "beta",  classifiedIdeas, "");
 
   // Round 8: Judge Gamma
-  const gammaResult = await runJudgeRound(8, "gamma", classifiedIdeas, context);
+  const gammaResult = await runJudgeRound(8, "gamma", classifiedIdeas, "");
 
   // Parse and average ratings
   const alphaRatings = alphaResult ? parseJsonOutput(alphaResult) : null;
@@ -766,9 +783,12 @@ export async function runFullDebate(options = {}) {
 
   let moroccoNotes = null;
   try {
+    // Compact idea list for Morocco — only name + concept to minimize tokens
+    const ideasForMorocco = classifiedIdeas.map((i) => ({ name: i.name, concept: i.concept }));
     const moroccoResult = await runRound(MOROCCO_AGENT,
-      `Generate detailed Morocco Implementation Notes for these ideas:\n${JSON.stringify(classifiedIdeas.map((i) => ({ name: i.name, concept: i.concept })), null, 2)}\nOutput ONLY valid JSON.`,
-      context, { temperature: 0.4, model: MODELS.primary, maxTokens: 2048, netlifyContext: options.netlifyContext }
+      `Generate Morocco Implementation Notes for these ideas:\n${JSON.stringify(ideasForMorocco)}\nOutput ONLY valid JSON array.`,
+      "", // no prior context — saves tokens, Morocco agent has enough in its system prompt
+      { temperature: 0.4, model: MODELS.fast, maxTokens: 1200, netlifyContext: options.netlifyContext }
     );
     debateLog.push({ round: 9, agent: "morocco", content: moroccoResult, timestamp: new Date().toISOString() });
     moroccoNotes = parseJsonOutput(moroccoResult);
