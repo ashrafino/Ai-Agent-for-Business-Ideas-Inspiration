@@ -38,34 +38,34 @@ export const handler = async (event, context) => {
     console.log(`[VentureLens] Admin analysis trigger for ${user.email}`);
 
     const result = await runFullDebate({ netlifyContext: context });
-    const today  = new Date().toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
 
     // Save to global "main" — results visible to all authenticated users
     await update((db) => {
       db.latest = {
-        id:        result.id,
+        id: result.id,
         timestamp: result.timestamp,
-        status:    "complete",
-        phases:    result.phases,
-        ideas:     result.ideas,
+        status: "complete",
+        phases: result.phases,
+        ideas: result.ideas,
       };
 
       if (!db.history) db.history = [];
       if (!db.history.find((h) => h.id === result.id)) {
         db.history.unshift({
-          id:        result.id,
+          id: result.id,
           timestamp: result.timestamp,
           ideaCount: result.ideas.length,
-          topIdea:   result.ideas[0]?.name          || "Unknown",
-          topTier:   result.ideas[0]?.tier          || "?",
-          topScore:  result.ideas[0]?.compositeScore || 0,
+          topIdea: result.ideas[0]?.name || "Unknown",
+          topTier: result.ideas[0]?.tier || "?",
+          topScore: result.ideas[0]?.compositeScore || 0,
         });
         db.history = db.history.slice(0, 50);
       }
 
       if (db.todayDate !== today) {
         db.todayIdeas = [];
-        db.todayDate  = today;
+        db.todayDate = today;
       }
       if (!db.todayIdeas) db.todayIdeas = [];
       db.todayIdeas.push(...result.ideas);
@@ -84,13 +84,13 @@ export const handler = async (event, context) => {
         .map((idea, i) => ({ ...idea, dayRank: i + 1 }));
 
       db.bestOfDay = {
-        date:               today,
-        ideas:              ranked,
+        date: today,
+        ideas: ranked,
         totalIdeasAnalyzed: db.todayIdeas.length,
-        uniqueIdeas:        ideaMap.size,
-        totalRuns:          db.history.filter((h) => h.timestamp?.startsWith(today)).length,
-        topScore:           ranked[0]?.compositeScore || 0,
-        generatedAt:        new Date().toISOString(),
+        uniqueIdeas: ideaMap.size,
+        totalRuns: db.history.filter((h) => h.timestamp?.startsWith(today)).length,
+        topScore: ranked[0]?.compositeScore || 0,
+        generatedAt: new Date().toISOString(),
       };
 
       return db;
