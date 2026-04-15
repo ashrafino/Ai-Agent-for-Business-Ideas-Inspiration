@@ -9,6 +9,86 @@
 const API_BASE = "/api";
 const TOTAL_ROUNDS = 9;
 
+// ============================================
+// Auth State Management
+// ============================================
+const Auth = {
+  token: localStorage.getItem("vl_token") || null,
+  user: JSON.parse(localStorage.getItem("vl_user") || "null"),
+
+  save(token, user) {
+    this.token = token;
+    this.user = user;
+    localStorage.setItem("vl_token", token);
+    localStorage.setItem("vl_user", JSON.stringify(user));
+    this.updateUI();
+  },
+
+  logout() {
+    this.token = null;
+    this.user = null;
+    localStorage.removeItem("vl_token");
+    localStorage.removeItem("vl_user");
+    this.updateUI();
+    location.reload(); 
+  },
+
+  isAuthenticated() {
+    return !!this.token;
+  },
+
+  updateUI() {
+    const overlay = $("#auth-overlay");
+    const headerUser = $("#header-user");
+    const mainContent = $("#main-content");
+    const mainHeader = $("#main-header");
+    const footer = $("footer");
+
+    if (this.isAuthenticated()) {
+      overlay.style.display = "none";
+      headerUser.style.display = "flex";
+      $("#display-user-name").textContent = this.user?.name || "User";
+      
+      // Reveal main app
+      mainContent.style.opacity = "1";
+      mainContent.style.pointerEvents = "auto";
+      mainHeader.style.opacity = "1";
+      footer.style.opacity = "1";
+    } else {
+      overlay.style.display = "flex";
+      headerUser.style.display = "none";
+      
+      // Dim main app
+      mainContent.style.opacity = "0.05";
+      mainContent.style.pointerEvents = "none";
+      mainHeader.style.opacity = "0.3";
+      footer.style.opacity = "0.3";
+    }
+  }
+};
+
+/** Central fetch helper with Auth headers */
+async function apiFetch(url, options = {}) {
+  const headers = {
+    ...options.headers,
+    "Content-Type": "application/json",
+  };
+
+  if (Auth.token) {
+    headers["Authorization"] = `Bearer ${Auth.token}`;
+  }
+
+  const res = await fetch(url, { ...options, headers });
+  
+  if (res.status === 401 && Auth.isAuthenticated()) {
+    // Token likely expired
+    Auth.logout();
+    throw new Error("Session expired. Please login again.");
+  }
+  
+  return res;
+}
+
 const AGENT_COLORS = {
   scout: "#00d4ff", analyst: "#7c3aed", critic: "#ef4444",
   strategist: "#10b981", judge: "#f59e0b",
@@ -78,17 +158,76 @@ const $$ = (sel) => document.querySelectorAll(sel);
 // Initialization
 // ============================================
 document.addEventListener("DOMContentLoaded", () => {
+  Auth.updateUI();
   bindEvents();
-  checkDatabaseHealth();   // verify Netlify Blobs is reachable
-  loadLatestResults();
-  loadHistory();
-  loadBestOfDay();
-  loadHallOfFame();
-  updateNextRunTimer();
-  setInterval(updateNextRunTimer, 60000);
+  
+  if (Auth.isAuthenticated()) {
+    checkDatabaseHealth();   // verify Netlify Blobs is reachable
+    loadLatestResults();
+    loadHistory();
+    loadBestOfDay();
+    loadHallOfFame();
+    updateNextRunTimer();
+    setInterval(updateNextRunTimer, 60000);
+  }
 });
 
 function bindEvents() {
+  // Auth Events
+  $("#auth-toggle").addEventListener("click", (e) => {
+    e.preventDefault();
+    const isSignup = $("#group-name").style.display === "none";
+    $("#group-name").style.display = isSignup ? "flex" : "none";
+    $("#auth-title").textContent = isSignup ? "Create Account" : "Welcome Back";
+    $("#auth-subtitle").textContent = isSignup ? "Join VentureLens for autonomous insights" : "Login to access real-time startup intelligence";
+    $("#btn-auth-submit .btn-text").textContent = isSignup ? "Sign Up" : "Sign In";
+    $("#auth-toggle").textContent = isSignup ? "Sign In" : "Create one";
+    $("#auth-toggle-text").firstChild.textContent = isSignup ? "Already have an account? " : "Don't have an account? ";
+    $("#auth-error").style.display = "none";
+  });
+
+  $("#auth-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const isSignup = $("#group-name").style.display !== "none";
+    const email = $("#auth-email").value;
+    const password = $("#auth-password").value;
+    const name = $("#auth-name").value;
+    const errorEl = $("#auth-error");
+    const btn = $("#btn-auth-submit");
+    const loader = btn.querySelector(".btn-loader");
+    const btnText = btn.querySelector(".btn-text");
+
+    errorEl.style.display = "none";
+    btnText.style.display = "none";
+    loader.style.display = "block";
+    btn.disabled = true;
+
+    try {
+      const endpoint = isSignup ? "/auth-signup" : "/auth-login";
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Authentication failed");
+
+      Auth.save(data.token, data.user);
+      showToast(`Welcome back, ${data.user.name}!`);
+      location.reload(); // Refresh to trigger data load
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    } finally {
+      loader.style.display = "none";
+      btnText.style.display = "block";
+      btn.disabled = false;
+    }
+  });
+
+  $("#btn-logout").addEventListener("click", () => Auth.logout());
+
   $("#btn-run-analysis").addEventListener("click", startLiveDebate);
   $("#btn-view-debate").addEventListener("click", toggleDebatePanel);
   $("#btn-close-debate").addEventListener("click", () => {
@@ -116,7 +255,7 @@ function bindEvents() {
 // ============================================
 async function fetchLatestResults() {
   try {
-    const res = await fetch(`${API_BASE}/get-results?type=latest`);
+    const res = await apiFetch(`${API_BASE}/get-results?type=latest`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
@@ -127,7 +266,7 @@ async function fetchLatestResults() {
 
 async function fetchHistory() {
   try {
-    const res = await fetch(`${API_BASE}/get-results?type=history`);
+    const res = await apiFetch(`${API_BASE}/get-results?type=history`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
@@ -138,7 +277,7 @@ async function fetchHistory() {
 
 async function fetchBestOfDay() {
   try {
-    const res = await fetch(`${API_BASE}/get-results?type=best-of-day`);
+    const res = await apiFetch(`${API_BASE}/get-results?type=best-of-day`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
@@ -176,9 +315,8 @@ async function saveSession(session) {
   // Attempt with 1 retry
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const res = await fetch(`${API_BASE}/save-session`, {
+      const res = await apiFetch(`${API_BASE}/save-session`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ session: compact }),
       });
       if (res.ok) return await res.json();
@@ -196,9 +334,8 @@ async function saveSession(session) {
 function triggerCurate(ideas) {
   const highScorers = ideas.filter((i) => (i.compositeScore || 0) >= 7.0);
   if (highScorers.length === 0) return;
-  fetch(`${API_BASE}/curate`, {
+  apiFetch(`${API_BASE}/curate`, {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ ideas: highScorers }),
   })
     .then((r) => r.json())
@@ -213,7 +350,7 @@ function triggerCurate(ideas) {
 
 async function checkDatabaseHealth() {
   try {
-    const res = await fetch(`${API_BASE}/health`);
+    const res = await apiFetch(`${API_BASE}/health`);
     const data = await res.json();
     if (data.ok) {
       console.log("[Health] MongoDB Atlas ✅", data);
@@ -246,9 +383,8 @@ function showDbStatus(state, message) {
 }
 
 async function runDebateRound(round, context) {
-  const res = await fetch(`${API_BASE}/debate-round`, {
+  const res = await apiFetch(`${API_BASE}/debate-round`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ round, context }),
   });
   if (!res.ok) {

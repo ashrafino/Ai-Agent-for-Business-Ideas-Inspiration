@@ -2385,3 +2385,192 @@ footer {
   letter-spacing: 0.05em;
   margin-bottom: var(--space-sm);
 }
+
+/* ============================================
+   User Authentication (Login/Signup)
+   ============================================ */
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: radial-gradient(circle at center, rgba(13, 13, 43, 0.95), var(--bg-deep));
+  backdrop-filter: blur(24px) saturate(150%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  animation: fadeIn 0.4s ease;
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 440px;
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-xl);
+  padding: var(--space-2xl);
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 212, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: var(--space-2xl);
+}
+
+.auth-logo {
+  margin-bottom: var(--space-md);
+  display: inline-flex;
+}
+
+.auth-header h2 {
+  font-family: var(--font-heading);
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: var(--space-xs);
+  background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.auth-header p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.form-group label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 4px;
+}
+
+.input-wrap {
+  position: relative;
+}
+
+.input-wrap input {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  transition: all var(--transition-base);
+}
+
+.input-wrap input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: rgba(0, 212, 255, 0.05);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+}
+
+.auth-error {
+  padding: 12px;
+  background: var(--danger-dim);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--danger);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
+.btn-block {
+  width: 100%;
+  justify-content: center;
+  padding: 14px;
+  font-size: 1rem;
+}
+
+.auth-footer {
+  margin-top: var(--space-xl);
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.auth-footer a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color var(--transition-fast);
+}
+
+.auth-footer a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.btn-loader {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0,0,0,0.1);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding-left: var(--space-lg);
+  border-left: 1px solid var(--border);
+}
+
+.user-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+}

@@ -2,8 +2,11 @@
 // VentureLens — MongoDB Atlas Storage
 // ============================================
 import { MongoClient } from "mongodb";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 const MONGO_URI = process.env.MONGODB_URI;
+const JWT_SECRET = process.env.JWT_SECRET || "venture-lens-super-secret-default";
 const DB_NAME   = "venturelens";
 const COL_NAME  = "sessions";
 
@@ -145,4 +148,68 @@ export async function healthCheck() {
     console.error("[Storage] healthCheck error:", err.message);
   }
   return result;
+}
+
+// ── User Management ──────────────────────────────────────────────────────────
+
+/** Create a new user with hashed password */
+export async function createUser({ email, password, name }) {
+  const client = await getClient();
+  const db = client.db(DB_NAME);
+  const col = db.collection("users");
+
+  // Check if user exists
+  const existing = await col.findOne({ email: email.toLowerCase() });
+  if (existing) throw new Error("User already exists with this email.");
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const user = {
+    email: email.toLowerCase(),
+    password: hashedPassword,
+    name,
+    createdAt: new Date().toISOString(),
+  };
+
+  const result = await col.insertOne(user);
+  return { id: result.insertedId, email, name };
+}
+
+/** Verify credentials and return user (minus password) */
+export async function authenticateUser(email, password) {
+  const client = await getClient();
+  const db = client.db(DB_NAME);
+  const col = db.collection("users");
+
+  const user = await col.findOne({ email: email.toLowerCase() });
+  if (!user) throw new Error("Invalid email or password.");
+
+  const isValid = await bcrypt.compare(password, user.password);
+  if (!isValid) throw new Error("Invalid email or password.");
+
+  const { password: _, ...userWithoutPassword } = user;
+  return userWithoutPassword;
+}
+
+/** Generate a JWT for a user */
+export function generateToken(user) {
+  return jwt.sign(
+    { id: user._id, email: user.email, name: user.name },
+    JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+}
+
+/** Verify JWT from request header */
+export function verifyAuth(event) {
+  const authHeader = event.headers.authorization || event.headers.Authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new Error("Missing or invalid authorization header.");
+  }
+
+  const token = authHeader.split(" ")[1];
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    throw new Error("Invalid or expired session token.");
+  }
 }

@@ -1,4 +1,4 @@
-import { update } from "./lib/storage.mjs";
+import { update, verifyAuth } from "./lib/storage.mjs";
 
 /**
  * POST /api/save-session
@@ -11,7 +11,7 @@ export const handler = async (event) => {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers };
@@ -20,6 +20,10 @@ export const handler = async (event) => {
   }
 
   try {
+    // 🔒 Enforce Authentication
+    const user = verifyAuth(event);
+    console.log(`[Save] Authorized save for ${user.email}`);
+
     const { session } = JSON.parse(event.body || "{}");
 
     if (!session || !Array.isArray(session.ideas) || session.ideas.length === 0) {

@@ -1,5 +1,5 @@
 import { update } from "./lib/storage.mjs";
-import { curateTopIdeas } from "./lib/groq.mjs";
+import { curateTopIdeas, verifyAuth } from "./lib/storage.mjs";
 
 /**
  * POST /api/curate
@@ -10,7 +10,7 @@ export const handler = async (event) => {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers };
@@ -19,6 +19,10 @@ export const handler = async (event) => {
   }
 
   try {
+    // 🔒 Enforce Authentication
+    const user = verifyAuth(event);
+    console.log(`[Curate] Authorized curation for ${user.email}`);
+
     const { ideas } = JSON.parse(event.body || "{}");
     if (!Array.isArray(ideas) || ideas.length === 0) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: "ideas array required" }) };

@@ -13,7 +13,9 @@
   "dependencies": {
     "@netlify/blobs": "^7.3.0",
     "@netlify/functions": "^3.0.0",
+    "bcryptjs": "^2.4.3",
     "cheerio": "^1.2.0",
+    "jsonwebtoken": "^9.0.2",
     "mongodb": "^7.1.1"
   }
 }

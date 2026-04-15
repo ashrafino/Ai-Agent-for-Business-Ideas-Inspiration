@@ -1,4 +1,4 @@
-import { get, readDB } from "./lib/storage.mjs";
+import { get, readDB, verifyAuth } from "./lib/storage.mjs";
 
 /**
  * GET /api/get-results?type=latest|history|best-of-day|hall-of-fame
@@ -10,7 +10,7 @@ export const handler = async (event) => {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers };
@@ -18,6 +18,10 @@ export const handler = async (event) => {
   const type = event.queryStringParameters?.type || "latest";
 
   try {
+    // 🔒 Enforce Authentication
+    const user = verifyAuth(event);
+    console.log(`[VentureLens] Authorized access for ${user.email} (${type})`);
+
     let data;
 
     switch (type) {
@@ -57,9 +61,11 @@ export const handler = async (event) => {
       body: JSON.stringify(data),
     };
   } catch (error) {
-    console.error(`[VentureLens] get-results (${type}) error:`, error.message);
+    const isAuthError = error.message.includes("authorization") || error.message.includes("token");
+    console.warn(`[VentureLens] get-results (${type}) error:`, error.message);
     return {
-      statusCode: 500, headers,
+      statusCode: isAuthError ? 401 : 500, 
+      headers,
       body: JSON.stringify({ error: error.message }),
     };
   }

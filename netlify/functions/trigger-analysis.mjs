@@ -1,4 +1,4 @@
-import { update } from "./lib/storage.mjs";
+import { update, verifyAuth } from "./lib/storage.mjs";
 import { runFullDebate } from "./lib/groq.mjs";
 
 /**
@@ -11,7 +11,7 @@ export const handler = async (event, context) => {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 
   if (event.httpMethod === "OPTIONS") {
@@ -21,6 +21,10 @@ export const handler = async (event, context) => {
   console.log("[VentureLens] Manual analysis trigger received");
 
   try {
+    // 🔒 Enforce Authentication
+    const user = verifyAuth(event);
+    console.log(`[VentureLens] Authorized analysis trigger for ${user.email}`);
+
     const result = await runFullDebate({ netlifyContext: context });
     const today  = new Date().toISOString().slice(0, 10);
 
@@ -89,9 +93,10 @@ export const handler = async (event, context) => {
       body: JSON.stringify(result),
     };
   } catch (error) {
-    console.error("[VentureLens] Manual trigger error:", error);
+    const isAuthError = error.message.includes("authorization") || error.message.includes("token");
+    console.warn("[VentureLens] Manual trigger error:", error.message);
     return {
-      statusCode: 500,
+      statusCode: isAuthError ? 401 : 500,
       headers,
       body: JSON.stringify({ error: error.message }),
     };

@@ -1,6 +1,7 @@
 import { AGENTS, JUDGING_PANEL, runRound } from "./lib/groq.mjs";
 import { scrapeAllSources, formatScrapedDataForLLM } from "./lib/scraper.mjs";
 import { getCuratedLists, queryIdeas } from "./lib/idea-storage.mjs";
+import { verifyAuth } from "./lib/storage.mjs";
 
 /**
  * Build context from database + live scrape
@@ -179,7 +180,7 @@ export const handler = async (event, context) => {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers };
@@ -188,7 +189,11 @@ export const handler = async (event, context) => {
   }
 
   try {
-    const { round, context: debateHistory } = JSON.parse(event.body);
+    // 🔒 Enforce Authentication
+    const user = verifyAuth(event);
+    console.log(`[VentureLens] Authorized debate round ${round} for ${user.email}`);
+
+    const { round: r, context: debateHistory } = JSON.parse(event.body);
     const config = ROUND_CONFIG[round];
 
     if (!config) {
@@ -265,9 +270,10 @@ export const handler = async (event, context) => {
       }),
     };
   } catch (error) {
-    console.error("[VentureLens] Debate round error:", error);
+    const isAuthError = error.message.includes("authorization") || error.message.includes("token");
+    console.warn("[VentureLens] Debate round error:", error.message);
     return {
-      statusCode: 500,
+      statusCode: isAuthError ? 401 : 500,
       headers,
       body: JSON.stringify({ error: error.message }),
     };
