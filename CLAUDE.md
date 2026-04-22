@@ -1,6 +1,18 @@
-# CLAUDE.md
+# VentureLens Architecture
+- **Consolidated Debate**: 4 rounds (Scout, Evaluator, Strategist, Judge)
+- **Primary LLM**: Gemini 2.0 Flash (via direct API)
+- **Fallback LLMs**: Llama 3.3 70B (Groq), OpenRouter free models
+- **Database**: Netlify Blobs for session/history, MongoDB for raw ideas
+- **Scraping**: Sequential multi-source scraping with 6h caching
+- **Morocco Focus**: Implementation notes integrated into Strategist/Judge rounds
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+## Recent Fixes
+- Consolidated 9 rounds into 4 to improve stability and speed.
+- Prioritized Gemini 2.0 Flash (15 RPM free tier) to avoid "All models exhausted" errors.
+- Merged Analyst/Critic into **Evaluator** and Strategist/Morocco into **Strategist**.
+- Updated frontend and backend to support the new 4-round pipeline.
+- Improved error handling to continue analysis if sub-rounds fail.
+- Optimized rate limits and inter-round delays for free tier quotas.
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 

@@ -5,7 +5,7 @@ const ADMIN_EMAIL = "achrafbach1@gmail.com";
 
 /**
  * POST /api/trigger-analysis
- * Admin-only: starts a 9-round debate and saves results globally for all users.
+ * Admin-only: starts a 4-round debate and saves results globally for all users.
  */
 export const handler = async (event, context) => {
   const headers = {

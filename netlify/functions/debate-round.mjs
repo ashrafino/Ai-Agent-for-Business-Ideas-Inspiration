@@ -6,10 +6,8 @@ import { verifyAuth } from "./lib/storage.mjs";
 // Only Round 1 needs fresh market data to find ideas.
 // Subsequent rounds (2-4) analyze those specific ideas.
 // Round 5 (Judge) might benefit from seeing market context again to verify claims.
-const ROUNDS_WITH_MARKET_DATA = new Set([1, 5]);
-
 /**
- * Build context from database + live scrape
+ * Build enhanced context from database + live scrape
  * Prioritizes database ideas (historical best) + fresh scrape (latest trends)
  */
 async function buildEnhancedContext(scraped, isSubRound = false) {
@@ -73,60 +71,32 @@ async function buildEnhancedContext(scraped, isSubRound = false) {
   return lines.join("\n");
 }
 
-// Agent/round mapping for all 9 rounds
+// Agent/round mapping (Consolidated to 4 rounds for speed and stability)
 const ROUND_CONFIG = {
   1: {
     agent: AGENTS.scout,
-    prompt: (ctx) => `${ctx}\n\nUsing the curated database ideas AND live market data above, extract 5 micro-startup opportunities:\n\n1. From GOLD TIER database: Identify patterns and gaps in validated ideas\n2. From PAIN POINTS: Find clear problems people are willing to pay to solve\n3. From VALIDATED ideas: Look for proven traction patterns to replicate\n4. From TRENDING: Spot emerging opportunities with momentum\n5. From LIVE DATA: Find fresh opportunities from today's scrape\n\nPrioritize ideas from the database (they're pre-filtered for quality). Cite SPECIFIC titles, quality scores, and sources as evidence. NO invented demand.`,
+    prompt: (ctx) => `${ctx}\n\nUsing the curated database ideas AND live market data above, extract 5 micro-startup opportunities:\n\n1. From GOLD TIER database: Identify patterns and gaps in validated ideas\n2. From PAIN POINTS: Find clear problems people are willing to pay to solve\n3. From VALIDATED ideas: Look for proven traction patterns to replicate\n4. From TRENDING: Spot emerging opportunities with momentum\n5. From LIVE DATA: Find fresh opportunities from today's scrape\n\nPrioritize ideas from the database. Cite SPECIFIC titles/sources.`,
     options: { maxTokens: 2500 },
   },
   2: {
-    agent: AGENTS.analyst,
-    prompt: (_ctx) => `Analyze each of the 5 startup ideas from Scout (in the context above). Validate TAM, pricing, and competition with specific numbers.`,
-    options: { maxTokens: 1500 },
+    agent: AGENTS.evaluator,
+    prompt: (_ctx) => `Analyze each of the 5 startup ideas from Scout (in the context above). Validate TAM, pricing, and MOAT. THEN, find fatal flaws in each idea. Be brutally honest. Assign risk scores: [RISK_SCORES: Idea1=8, Idea2=4, ...]`,
+    options: { maxTokens: 2000 },
   },
   3: {
-    agent: AGENTS.critic,
-    prompt: (_ctx) => `Challenge every assumption in Scout's ideas and Analyst's evaluation. Be direct. At the end, provide risk scores for EACH idea: [RISK_SCORES: Idea1=8, Idea2=4, ...]`,
-    options: { maxTokens: 1200 },
+    agent: AGENTS.strategist,
+    prompt: (_ctx) => `Provide execution plans for each idea. Include Morocco-specific payment, legal, and banking solutions. Be tactical with exact tools and a 4-week timeline.`,
+    options: { maxTokens: 2000 },
   },
   4: {
-    agent: AGENTS.strategist,
-    prompt: (_ctx) => `Provide execution plans for each idea from the context above. Include Morocco-specific payment and legal solutions. Be tactical with exact tools and timelines.`,
-    options: { maxTokens: 1500 },
-  },
-  5: {
     agent: AGENTS.judge,
     prompt: () => `Review ALL previous rounds. Produce your classification as a JSON array of 5 startup ideas. Output ONLY valid JSON, no preamble.`,
-    options: { maxTokens: 1800 },
-  },
-  6: {
-    agent: { ...JUDGING_PANEL.alpha, systemPrompt: JUDGING_PANEL.alpha.systemPrompt },
-    prompt: () => `Rate ALL startup ideas on the 4 criteria (capitalEfficiency, executionFromMorocco, scalability, innovationScore) 1-10. Output ONLY valid JSON array.`,
-    options: { temperature: JUDGING_PANEL.alpha.temperature, model: JUDGING_PANEL.alpha.model, maxTokens: 1500 },
-  },
-  7: {
-    agent: { ...JUDGING_PANEL.beta, systemPrompt: JUDGING_PANEL.beta.systemPrompt },
-    prompt: () => `Rate ALL startup ideas on the 4 criteria (capitalEfficiency, executionFromMorocco, scalability, innovationScore) 1-10. Output ONLY valid JSON array.`,
-    options: { temperature: JUDGING_PANEL.beta.temperature, model: JUDGING_PANEL.beta.model, maxTokens: 1500 },
-  },
-  8: {
-    agent: { ...JUDGING_PANEL.gamma, systemPrompt: JUDGING_PANEL.gamma.systemPrompt },
-    prompt: () => `Rate ALL startup ideas on the 4 criteria (capitalEfficiency, executionFromMorocco, scalability, innovationScore) 1-10. Output ONLY valid JSON array.`,
-    options: { temperature: JUDGING_PANEL.gamma.temperature, model: JUDGING_PANEL.gamma.model, maxTokens: 1500 },
-  },
-  9: {
-    agent: {
-      name: "Morocco Advisor",
-      role: "MENA Implementation Specialist",
-      color: "#059669",
-      icon: "MA",
-      systemPrompt: `You are an expert on doing business from Morocco in the global tech economy. For EACH startup idea, provide a "Morocco Implementation Note" as a JSON array with fields: name, paymentSolutions, legalStructure, bankingSolutions, localAdvantages, remoteExecution, criticalWarning. Output ONLY valid JSON.`,
-    },
-    prompt: () => `Generate Morocco Implementation Notes for all startup ideas discussed. Be concise and specific. Output ONLY valid JSON.`,
-    options: { temperature: 0.4, maxTokens: 2000 },
+    options: { maxTokens: 2500 },
   },
 };
+
+// Only Round 1 and 4 need market data to ground their analysis
+const ROUNDS_WITH_MARKET_DATA = new Set([1, 4]);
 
 export const handler = async (event, context) => {
   const headers = {
@@ -198,11 +168,11 @@ export const handler = async (event, context) => {
       netlifyContext: context, // Pass for dynamic timeout management
     });
 
-    // ── NEW: Early Exit Logic (after Critic round) ───────────────────────────
+    // ── Early Exit Logic (after Evaluator round) ───────────────────────────
     let earlyExit = false;
     let exitReason = "";
 
-    if (round === 3) {
+    if (round === 2) {
       // Look for [RISK_SCORES: Idea1=10, Idea2=10, ...] pattern
       const match = result.match(/\[RISK_SCORES:\s*(.*?)\]/i);
       if (match) {
@@ -214,7 +184,7 @@ export const handler = async (event, context) => {
         // If ALL ideas have risk score >= 9, exit early
         if (scores.length > 0 && scores.every(s => s >= 9)) {
           earlyExit = true;
-          exitReason = "CRITIC STOP: All startup ideas identified in this session are considered too risky or fundamentally flawed to proceed with execution planning. Recommend starting a new analysis with fresh data.";
+          exitReason = "EVALUATOR STOP: All ideas are considered too risky. Recommend fresh data.";
         }
       }
     }

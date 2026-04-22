@@ -7,7 +7,7 @@
 // Configuration
 // ============================================
 const API_BASE     = "/api";
-const TOTAL_ROUNDS = 9;
+const TOTAL_ROUNDS = 4;
 const ADMIN_EMAIL  = "achrafbach1@gmail.com";
 
 // ============================================
@@ -102,34 +102,24 @@ async function apiFetch(url, options = {}) {
 }
 
 const AGENT_COLORS = {
-  scout: "#00d4ff", analyst: "#7c3aed", critic: "#ef4444",
+  scout: "#00d4ff", evaluator: "#7c3aed",
   strategist: "#10b981", judge: "#f59e0b",
-  alpha: "#f97316", beta: "#06b6d4", gamma: "#a855f7",
-  morocco: "#059669",
 };
 
 const AGENT_META = {
   scout: { name: "Scout", role: "Trend Discovery", abbr: "SC" },
-  analyst: { name: "Analyst", role: "Market Analysis", abbr: "AN" },
-  critic: { name: "Critic", role: "Risk Assessment", abbr: "CR" },
-  strategist: { name: "Strategist", role: "Execution Planning", abbr: "ST" },
-  judge: { name: "Judge", role: "Classification", abbr: "JD" },
-  alpha: { name: "Judge Alpha", role: "Conservative VC", abbr: "JA" },
-  beta: { name: "Judge Beta", role: "Technical CTO", abbr: "JB" },
-  gamma: { name: "Judge Gamma", role: "Market Strategist", abbr: "JG" },
-  morocco: { name: "Morocco Advisor", role: "Implementation Specialist", abbr: "MA" },
+  evaluator: { name: "Evaluator", role: "Analysis & Risk", abbr: "EV" },
+  strategist: { name: "Strategist", role: "Execution & Morocco", abbr: "ST" },
+  judge: { name: "Judge", role: "Final Classification", abbr: "JD" },
 };
 
 const ROUND_LABELS = {
-  1: "scout", 2: "analyst", 3: "critic", 4: "strategist", 5: "judge",
-  6: "alpha", 7: "beta", 8: "gamma", 9: "morocco",
+  1: "scout", 2: "evaluator", 3: "strategist", 4: "judge",
 };
 
 const CONTEXT_LABELS = {
-  1: "SCOUT'S FINDINGS", 2: "ANALYST'S EVALUATION", 3: "CRITIC'S REVIEW",
-  4: "STRATEGIST'S PLAN", 5: "JUDGE'S CLASSIFICATION",
-  6: "JUDGE ALPHA'S RATINGS", 7: "JUDGE BETA'S RATINGS",
-  8: "JUDGE GAMMA'S RATINGS", 9: "MOROCCO IMPLEMENTATION NOTES",
+  1: "SCOUT'S FINDINGS", 2: "EVALUATOR'S REVIEW",
+  3: "STRATEGIST'S PLAN", 4: "JUDGE'S CLASSIFICATION",
 };
 
 // ============================================
@@ -508,35 +498,27 @@ async function startLiveDebate() {
       }
       markAgentDone(agentKey);
 
-      if (round === 5) {
+      if (round === 4) {
         classifiedIdeas = parseJsonOutput(result.content);
       }
 
       if (round === TOTAL_ROUNDS) {
-        const alphaRatings = parseJsonOutput(allDebateLogs.find((l) => l.round === 6)?.content || "");
-        const betaRatings = parseJsonOutput(allDebateLogs.find((l) => l.round === 7)?.content || "");
-        const gammaRatings = parseJsonOutput(allDebateLogs.find((l) => l.round === 8)?.content || "");
-        const moroccoNotes = parseJsonOutput(allDebateLogs.find((l) => l.round === 9)?.content || "");
-
-        classifiedIdeas = classifiedIdeas.map((idea, i) => {
-          const ratings = mergeRatingsForIdea(idea, i, alphaRatings, betaRatings, gammaRatings);
-          return {
-            ...idea,
-            ratings,
-            compositeScore: ratings?.totalScore || idea.score || 0,
-            moroccoNotes: moroccoNotes?.[i] || null,
-          };
-        });
+        // With consolidated agents, the final Judge round (Round 4) provides the complete data structure.
+        // We no longer need to merge separate judge/morocco notes.
+        classifiedIdeas = classifiedIdeas.map((idea, i) => ({
+          ...idea,
+          rank: i + 1,
+          compositeScore: idea.score || 0,
+        }));
 
         classifiedIdeas.sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0));
-        classifiedIdeas = classifiedIdeas.map((idea, i) => ({ ...idea, rank: i + 1 }));
 
         currentResults = {
           id: `session_${Date.now()}`,
           timestamp: new Date().toISOString(),
           ideas: classifiedIdeas,
           debate: allDebateLogs,
-          phases: { debate: 5, judging: 3, morocco: 1, totalRounds: 9 },
+          phases: { debate: 1, evaluation: 1, implementation: 1, judging: 1, totalRounds: 4 },
           status: "complete",
         };
 
@@ -551,11 +533,11 @@ async function startLiveDebate() {
     } catch (err) {
       removeTypingIndicator();
       console.error(`[VentureLens] Round ${round} failed:`, err);
-      renderErrorMessage(agentKey, `Round failed: ${err.message}. ${round < 5 ? "Trying to continue with next round..." : "Stopping analysis."}`);
+      renderErrorMessage(agentKey, `Round failed: ${err.message}. ${round < 4 ? "Trying to continue with next round..." : "Stopping analysis."}`);
       
-      // If a sub-round (Analyst, Critic, Strategist) fails, we try to keep going
+      // If a sub-round (Evaluator, Strategist) fails, we try to keep going
       // If a critical round (Scout, Judge) fails, we have to stop
-      if (round === 1 || round === 5) {
+      if (round === 1 || round === 4) {
         showToast(`Fatal error in ${agentKey}. Analysis stopped.`, "error");
         break;
       }
