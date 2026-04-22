@@ -70,8 +70,8 @@ const RATE_LIMIT = {
   backoffMultiplier: 1.5,
 };
 
-const MAX_CONTEXT_CHARS = 2000; // Tighter: prevents token overflow on small free models
-const MAX_SCRAPE_CHARS  = 1500; // Scrape context injected once (Round 1 only)
+const MAX_CONTEXT_CHARS = 4000; // Increased to allow more memory between agents
+const MAX_SCRAPE_CHARS  = 3000; // Increased to allow more data for Scout
 let lastCallTimestamp = 0;
 
 // ── Build the full ordered attempt queue ─────────────────────────────────────
@@ -575,7 +575,7 @@ export async function runRound(agent, userMessage, previousContext = "", options
 // ============================================
 // Run Judging Panel (3 separate LLM instances)
 // ============================================
-export async function runJudgingPanel(ideas, debateContext) {
+export async function runJudgingPanel(ideas, debateContext, netlifyContext = null) {
   const ideaNames = ideas.map((i) => i.name).join(", ");
   const prompt = `Rate the following startup ideas: ${ideaNames}\n\nHere are the ideas with their details:\n${JSON.stringify(ideas, null, 2)}\n\nRate ALL ideas on the 4 criteria (capitalEfficiency, executionFromMorocco, scalability, innovationScore) from 1-10. Output ONLY valid JSON.`;
 
@@ -589,7 +589,7 @@ export async function runJudgingPanel(ideas, debateContext) {
         temperature: judge.temperature,
         model: judge.model,
         maxTokens: 1024,
-        netlifyContext: options.netlifyContext,
+        netlifyContext,
       });
     } catch (err) {
       console.error(`[VentureLens] Judging Panel Error for ${judge.name}:`, err.message);

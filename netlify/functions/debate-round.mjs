@@ -3,6 +3,11 @@ import { scrapeAllSources, formatScrapedDataForLLM } from "./lib/scraper.mjs";
 import { getCuratedLists, queryIdeas } from "./lib/idea-storage.mjs";
 import { verifyAuth } from "./lib/storage.mjs";
 
+// Only Round 1 needs fresh market data to find ideas.
+// Subsequent rounds (2-4) analyze those specific ideas.
+// Round 5 (Judge) might benefit from seeing market context again to verify claims.
+const ROUNDS_WITH_MARKET_DATA = new Set([1, 5]);
+
 /**
  * Build context from database + live scrape
  * Prioritizes database ideas (historical best) + fresh scrape (latest trends)
@@ -19,39 +24,22 @@ async function buildEnhancedContext(scraped, isSubRound = false) {
     console.warn("[VentureLens] Database not available, using live scrape only:", err.message);
   }
   
-  lines.push("=== CURATED STARTUP IDEAS DATABASE ===");
-  
   if (dbIdeas) {
-    // Gold tier ideas (validated traction)
+    lines.push("=== CURATED STARTUP IDEAS DATABASE (Prioritize These) ===");
+    // ONLY Gold tier ideas (validated traction) to keep context high quality and relevant
     if (dbIdeas.goldIdeas?.length > 0) {
       lines.push("\n[🥇 GOLD TIER — Validated Traction]");
-      for (const idea of dbIdeas.goldIdeas.slice(0, 5)) {
+      for (const idea of dbIdeas.goldIdeas.slice(0, 8)) {
         lines.push(`• [Q:${Math.round(idea.qualityScore)}] ${idea.title} (${idea.source})`);
-        if (idea.description) lines.push(`  ${idea.description.slice(0, 100)}...`);
+        if (idea.description) lines.push(`  ${idea.description.slice(0, 120)}...`);
       }
     }
     
-    // Pain points
+    // Only add pain points if we have room and they are high quality
     if (dbIdeas.painPoints?.length > 0) {
-      lines.push("\n[💡 PAIN POINTS — Clear Problems to Solve]");
-      for (const idea of dbIdeas.painPoints.slice(0, 5)) {
+      lines.push("\n[💡 HIGH-QUALITY PAIN POINTS]");
+      for (const idea of dbIdeas.painPoints.slice(0, 4)) {
         lines.push(`• [Q:${Math.round(idea.qualityScore)}] ${idea.title} (${idea.source})`);
-      }
-    }
-    
-    // Validated ideas
-    if (dbIdeas.validated?.length > 0) {
-      lines.push("\n[✅ VALIDATED — Proven Traction]");
-      for (const idea of dbIdeas.validated.slice(0, 5)) {
-        lines.push(`• [${idea.upvotes}↑] ${idea.title} (${idea.source})`);
-      }
-    }
-    
-    // Trending
-    if (dbIdeas.trending?.length > 0) {
-      lines.push("\n[🔥 TRENDING — Recent + High Engagement]");
-      for (const idea of dbIdeas.trending.slice(0, 5)) {
-        lines.push(`• [${idea.upvotes}↑] ${idea.title} (${idea.source})`);
       }
     }
   }
@@ -59,58 +47,26 @@ async function buildEnhancedContext(scraped, isSubRound = false) {
   lines.push("\n=== LIVE MARKET DATA (scraped this session) ===");
   
   // Add live scrape data
-  const hn = scraped.hackerNews?.posts || [];
-  const hnAsk = scraped.hackerNewsAsk?.posts || [];
-  const reddit = scraped.reddit?.posts || [];
-  const ph = scraped.productHunt?.posts || [];
-  const ih = scraped.indieHackers?.posts || [];
-  const gh = scraped.githubTrending?.repos || [];
-  const yc = scraped.ycombinator?.companies || [];
+  const sources = [
+    { label: "HN SHOW", posts: scraped.hackerNews?.posts, fmt: (p) => `• [${p.score}pts] ${p.title}` },
+    { label: "HN ASK",  posts: scraped.hackerNewsAsk?.posts, fmt: (p) => `• [${p.score}pts] ${p.title}` },
+    { label: "REDDIT",  posts: scraped.reddit?.posts, fmt: (p) => `• [${p.subreddit}] ${p.title}` },
+    { label: "PRODUCT HUNT", posts: scraped.productHunt?.posts, fmt: (p) => `• ${p.title}${p.upvotes ? ` [${p.upvotes}↑]` : ""} — ${p.tagline || p.description?.slice(0, 60)}` },
+    { label: "INDIE HACKERS", posts: scraped.indieHackers?.posts, fmt: (p) => `• ${p.title}${p.mrrHint ? ` [${p.mrrHint}]` : ""}` },
+    { label: "GITHUB TRENDING", posts: scraped.githubTrending?.repos, fmt: (r) => `• ${r.title} [${r.language}]` },
+    { label: "YC W25", posts: scraped.ycombinator?.companies, fmt: (c) => `• ${c.title} — ${c.description?.slice(0, 60)}` },
+  ];
 
-  const limit = isSubRound ? 3 : 8;
+  // More aggressive limits for sub-rounds to keep them focused
+  const limit = isSubRound ? 2 : 6;
 
-  if (hn.length > 0) {
-    lines.push(`\n[HN SHOW — validated launches]`);
-    for (const p of hn.slice(0, limit))
-      lines.push(`• [${p.score}pts] ${p.title}`);
-  }
-
-  if (hnAsk.length > 0) {
-    lines.push(`\n[HN ASK — developer pain points]`);
-    for (const p of hnAsk.slice(0, isSubRound ? 2 : 6))
-      lines.push(`• [${p.score}pts] ${p.title}`);
-  }
-
-  if (reddit.length > 0) {
-    lines.push(`\n[REDDIT — pain points & discussion]`);
-    for (const p of reddit.slice(0, isSubRound ? 4 : 10))
-      lines.push(`• ${p.title}`);
-  }
-
-  if (ph.length > 0) {
-    lines.push(`\n[PRODUCT HUNT — recent launches]`);
-    for (const p of ph.slice(0, limit)) {
-      const upvotes = p.upvotes ? ` [${p.upvotes}↑]` : "";
-      lines.push(`• ${p.title}${upvotes}${p.tagline ? ` — ${p.tagline.slice(0, 60)}` : ""}`);
+  for (const src of sources) {
+    if (src.posts?.length > 0) {
+      lines.push(`\n[${src.label}]`);
+      for (const p of src.posts.slice(0, limit)) {
+        lines.push(src.fmt(p));
+      }
     }
-  }
-
-  if (ih.length > 0) {
-    lines.push(`\n[INDIE HACKERS — validated MRR]`);
-    for (const p of ih.slice(0, isSubRound ? 3 : 6))
-      lines.push(`• ${p.title}${p.mrrHint ? ` [${p.mrrHint}]` : ""}`);
-  }
-
-  if (gh.length > 0) {
-    lines.push(`\n[GITHUB TRENDING — hot dev tools]`);
-    for (const r of gh.slice(0, isSubRound ? 2 : 6))
-      lines.push(`• ${r.title} [${r.language}, +${r.starsAdded}★/wk]`);
-  }
-
-  if (yc.length > 0) {
-    lines.push(`\n[YC W25 BATCH — funded]`);
-    for (const c of yc.slice(0, isSubRound ? 3 : 8))
-      lines.push(`• ${c.title}${c.description ? ` — ${c.description.slice(0, 60)}` : ""}`);
   }
 
   lines.push("\n=== END MARKET DATA ===");
@@ -171,9 +127,6 @@ const ROUND_CONFIG = {
     options: { temperature: 0.4, maxTokens: 2000 },
   },
 };
-
-// Only Round 1 needs fresh market data — subsequent rounds use the debate context
-const ROUNDS_WITH_MARKET_DATA = new Set([1]);
 
 export const handler = async (event, context) => {
   const headers = {

@@ -17,10 +17,10 @@ const WEIGHTS = {
   RECENCY: 1.2,              // Recent posts get slight boost
   MAKER_CREDIBILITY: 1.3,    // Known makers, verified accounts
   
-  // Penalty multipliers
-  SPAM_PENALTY: 0.1,         // Promotional, clickbait content
-  VAGUE_PENALTY: 0.5,        // Too generic, no specifics
-  OFF_TOPIC_PENALTY: 0.3,    // Not startup/business related
+  // Penalty multipliers (more aggressive to filter out "unrelevant" data)
+  SPAM_PENALTY: 0.05,        // Promotional, clickbait content
+  VAGUE_PENALTY: 0.4,        // Too generic, no specifics
+  OFF_TOPIC_PENALTY: 0.2,    // Not startup/business related
 };
 
 // ── Enhanced Keyword Categories ──────────────────────────────────────────────
@@ -136,6 +136,21 @@ const KEYWORD_CATEGORIES = {
     minMatches: 1,
   },
   
+  // OFF-TOPIC INDICATORS (unrelevant to micro-SaaS/startup business)
+  offTopic: {
+    keywords: [
+      "tutorial", "how to build", "learning", "course", "bootcamp",
+      "coding challenge", "interview prep", "leetcode", "dsa",
+      "personal blog", "life update", "opinion piece", "politics",
+      "entertainment", "movie", "gaming", "esports", "streaming",
+      "hardware review", "gadget", "smartphone", "gaming laptop",
+      "wallpaper", "setup", "desk tour", "mechanical keyboard",
+      "recipe", "travel", "photography", "art", "music",
+    ],
+    weight: -15,
+    minMatches: 1,
+  },
+
   // SPAM/LOW-QUALITY INDICATORS (negative signals)
   spam: {
     keywords: [
@@ -153,11 +168,12 @@ const KEYWORD_CATEGORIES = {
       "next big thing", "unicorn", "10x",
       
       // Crypto/scam indicators
-      "crypto", "nft", "web3", "blockchain",
+      "crypto", "nft", "web3", "blockchain", "airdrop",
       "get rich", "passive income", "make money fast",
+      "trading signal", "forex", "binary options",
     ],
-    weight: -5,
-    minMatches: 2, // Need multiple spam signals to penalize
+    weight: -10,
+    minMatches: 1, // Reduced from 2 for stricter filtering
   },
 };
 
@@ -173,6 +189,7 @@ export function analyzeContent(text, metadata = {}) {
     marketSignalScore: scoreCategory(normalized, KEYWORD_CATEGORIES.marketSignals),
     technicalScore: scoreCategory(normalized, KEYWORD_CATEGORIES.technicalSignals),
     spamScore: scoreCategory(normalized, KEYWORD_CATEGORIES.spam),
+    offTopicScore: scoreCategory(normalized, KEYWORD_CATEGORIES.offTopic),
     
     // Content quality metrics
     specificity: calculateSpecificity(normalized),
@@ -187,7 +204,7 @@ export function analyzeContent(text, metadata = {}) {
   
   // Calculate composite quality score
   analysis.qualityScore = calculateQualityScore(analysis);
-  analysis.shouldInclude = analysis.qualityScore > 50; // Raised threshold for better filtering
+  analysis.shouldInclude = analysis.qualityScore > 40; // Lowered from 50 to ensure more relevant data reaches AI
   analysis.priority = categorizePriority(analysis.qualityScore);
   
   return analysis;
@@ -364,7 +381,8 @@ function calculateQualityScore(analysis) {
   score += analysis.startupRelevanceScore * WEIGHTS.STARTUP_RELEVANCE;
   score += analysis.marketSignalScore;
   score += analysis.technicalScore;
-  score += analysis.spamScore; // Already negative
+  score += analysis.spamScore;      // Already negative
+  score += analysis.offTopicScore;  // Already negative
   
   // Quality metrics
   score += analysis.specificity * 0.5;
@@ -384,9 +402,9 @@ function calculateQualityScore(analysis) {
 }
 
 function categorizePriority(qualityScore) {
-  if (qualityScore >= 150) return "GOLD"; // Must include - validated traction
-  if (qualityScore >= 80) return "HIGH";  // Strong signals
-  if (qualityScore >= 50) return "MEDIUM"; // Relevant but needs validation
+  if (qualityScore >= 140) return "GOLD"; // Must include - validated traction
+  if (qualityScore >= 70) return "HIGH";  // Strong signals
+  if (qualityScore >= 40) return "MEDIUM"; // Relevant but needs validation
   return "LOW"; // Filter out
 }
 

@@ -544,13 +544,26 @@ async function startLiveDebate() {
         updateStats(currentResults);
         updateLastUpdated(currentResults.timestamp);
         $("#btn-view-debate").disabled = false;
+        showToast("✅ Analysis complete!", "success");
       }
 
       if (round < TOTAL_ROUNDS) await sleep(500);
     } catch (err) {
       removeTypingIndicator();
-      renderErrorMessage(agentKey, err.message);
-      break;
+      console.error(`[VentureLens] Round ${round} failed:`, err);
+      renderErrorMessage(agentKey, `Round failed: ${err.message}. ${round < 5 ? "Trying to continue with next round..." : "Stopping analysis."}`);
+      
+      // If a sub-round (Analyst, Critic, Strategist) fails, we try to keep going
+      // If a critical round (Scout, Judge) fails, we have to stop
+      if (round === 1 || round === 5) {
+        showToast(`Fatal error in ${agentKey}. Analysis stopped.`, "error");
+        break;
+      }
+      
+      // For non-critical rounds, add a placeholder and continue
+      debateContext += `\n\n### Round ${round}: ${agentKey} (FAILED)\nError: ${err.message}`;
+      markAgentDone(agentKey);
+      continue; 
     }
   }
 

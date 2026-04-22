@@ -107,14 +107,17 @@ const STARTUP_KEYWORDS = [
   "saas", "microsaas", "mrr", "bootstrapped", "digital", "solo", "founder",
   "remote", "automation", "api", "software", "subscription", "no-code", 
   "low-code", "extension", "web app", "micro", "indie", "startup", "tool", "app",
-  "profitable", "$", "revenue", "launch", "launched", "customers", "b2b"
+  "profitable", "$", "revenue", "launch", "launched", "customers", "b2b",
+  "product", "platform", "marketplace", "workflow", "ai", "artificial intelligence",
+  "machine learning", "dashboard", "widget", "integration", "plugin", "chrome extension"
 ];
 
 const PAIN_POINT_KEYWORDS = [
   "need", "tool", "pay", "automate", "wish", "alternative", 
   "replace", "manual", "waste", "app for", "how do you",
   "tired of", "spend hours", "expensive", "hate", "frustrating",
-  "problem", "looking for"
+  "problem", "looking for", "issue", "struggle", "difficult",
+  "is there a", "recommend", "best way to", "anyone built", "is there an app"
 ];
 
 const PH_TAG_HINTS = [
