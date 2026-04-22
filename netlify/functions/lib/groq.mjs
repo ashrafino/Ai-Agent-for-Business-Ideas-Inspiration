@@ -32,23 +32,23 @@ const GEMINI_API_URL  = "https://generativelanguage.googleapis.com/v1beta/openai
 // ── Model roster ─────────────────────────────────────────────────────────────
 // Groq free tier — reliable production-ready models
 const GROQ_MODELS = [
-  { model: "llama-3.3-70b-versatile",   ctx: 131072 }, // smartest
-  { model: "llama-3.1-8b-instant",      ctx: 131072 }, // ultra-fast
-  { model: "mixtral-8x7b-32768",        ctx: 32768  }, // reliable fallback
+  { model: "llama-3.3-70b-versatile",   ctx: 131072 }, 
+  { model: "llama-3.1-8b-instant",      ctx: 131072 },
+  { model: "mixtral-8x7b-32768",        ctx: 32768  },
 ];
 
 // Google Gemini — primary provider (very generous free tier: 15 RPM)
 const GEMINI_MODELS = [
-  { model: "gemini-2.0-flash",          ctx: 1048576 }, // smartest + fastest
-  { model: "gemini-1.5-flash",          ctx: 1048576 }, // stable
-  { model: "gemini-2.0-flash-lite",     ctx: 1048576 }, // lite version
+  { model: "gemini-2.0-flash",          ctx: 1048576 },
+  { model: "gemini-1.5-flash",          ctx: 1048576 },
+  { model: "gemini-2.0-flash-lite",     ctx: 1048576 },
 ];
 
-// OpenRouter free tier — final fallback
+// OpenRouter free tier — final fallback (Removed 404 models)
 const OPENROUTER_MODELS = [
   { model: "google/gemma-2-9b-it:free",               ctx: 8192   },
   { model: "mistralai/mistral-7b-instruct:free",      ctx: 32768  },
-  { model: "google/gemini-2.0-flash-exp:free",        ctx: 1048576},
+  { model: "meta-llama/llama-3-8b-instruct:free",     ctx: 8192   },
 ];
 
 // Models for specific roles
@@ -60,15 +60,15 @@ const MODELS = {
 
 // ── Rate limit config ─────────────────────────────────────────────────────────
 const RATE_LIMIT = {
-  minDelayMs:        1000,  // Reduced to 1s
-  interRoundDelayMs: 2000,  // Reduced to 2s
-  maxRetries:        1,     // One retry allowed
+  minDelayMs:        1500,  // Increased to 1.5s to be safer
+  interRoundDelayMs: 3000,  // Increased to 3s
+  maxRetries:        0,     // NO retries — just move to next model immediately to save time
   backoffBaseMs:     1000,
   backoffMultiplier: 2,
 };
 
-const MAX_CONTEXT_CHARS = 5000; // Increased context
-const MAX_SCRAPE_CHARS  = 4000; // Increased scrape data
+const MAX_CONTEXT_CHARS = 3000; // Reduced for speed and reliability on free models
+const MAX_SCRAPE_CHARS  = 3000; // Balanced
 let lastCallTimestamp = 0;
 
 // ── Build the full ordered attempt queue ─────────────────────────────────────
@@ -186,8 +186,14 @@ export async function callGroq(messages, { temperature = 0.7, maxTokens = 2048, 
             console.warn(`[${provider}] ⚠️ Rate limited (429) on ${currentModel}. Skipping model, trying next in ${provider}...`);
             failedModels.add(currentModel);
             lastError = new Error(`${provider} rate limited (429) on ${currentModel}`);
-            // Brief cooldown before trying next model in same provider
-            await delay(3000);
+            
+            // If we are approaching lambda timeout, skip to next PROVIDER to save time
+            if (netlifyContext?.getRemainingTimeInMillis && netlifyContext.getRemainingTimeInMillis() < 10000) {
+              console.warn(`[${provider}] Approaching timeout. Skipping entire provider.`);
+              deadProviders.add(provider);
+            }
+            
+            await delay(1000); // Shorter delay
             break;
           }
 
@@ -511,7 +517,15 @@ export async function runFullDebate(options = {}) {
     try {
       const result = await runRound(agent, prompt, agentContext, { ...opts, netlifyContext: options.netlifyContext });
       debateLog.push({ round: roundNum, agent: agentKey, content: result, timestamp: new Date().toISOString() });
-      context += `\n\n=== ${agent.name.toUpperCase()} (Round ${roundNum}) ===\n${result}`;
+      
+      // Aggressive summarization: keep only the most important parts for context
+      // Round 1 (Scout) results are critical, keep them. Others can be summarized.
+      let summary = result;
+      if (roundNum > 1 && result.length > 800) {
+        summary = result.slice(0, 800) + "... [truncated]";
+      }
+      
+      context += `\n\n=== ${agent.name.toUpperCase()} (Round ${roundNum}) ===\n${summary}`;
       return result;
     } catch (err) {
       console.error(`[VentureLens] Round ${roundNum} (${agentKey}) failed:`, err.message);
@@ -531,7 +545,7 @@ export async function runFullDebate(options = {}) {
   const scoutPrompt = compactScrape
     ? `${compactScrape}\n\nFrom this market data, extract 5 micro-startup opportunities. Cite specific titles as evidence. Each idea: Name, Concept, Evidence, Tech Stack, Unfair Advantage.`
     : "Find 5 micro-startup ideas for a Morocco-based data engineer (under $500 launch). Focus on AI wrappers, micro-SaaS, and productized data services.";
-  await runAgentRound(1, "scout", scoutPrompt, "", { maxTokens: 1500 });
+  await runAgentRound(1, "scout", scoutPrompt, "", { maxTokens: 1000 }); // Reduced from 1500
 
   await delay(RATE_LIMIT.interRoundDelayMs);
 
@@ -539,7 +553,7 @@ export async function runFullDebate(options = {}) {
   await runAgentRound(2, "evaluator",
     "Analyze each idea: validate TAM, pricing, and MOAT. THEN, find fatal flaws in each. Assign risk scores: [RISK_SCORES: Idea1=8, Idea2=4, ...]",
     context,
-    { maxTokens: 1500 }
+    { maxTokens: 1000 } // Reduced from 1500
   );
 
   await delay(RATE_LIMIT.interRoundDelayMs);
@@ -548,7 +562,7 @@ export async function runFullDebate(options = {}) {
   await runAgentRound(3, "strategist",
     "Provide a 4-week launch plan for each. Include exact tech stack AND Morocco-specific payment/legal/banking solutions.",
     context,
-    { maxTokens: 1500 }
+    { maxTokens: 1000 } // Reduced from 1500
   );
 
   await delay(RATE_LIMIT.interRoundDelayMs);
@@ -557,7 +571,7 @@ export async function runFullDebate(options = {}) {
   const judgeResult = await runAgentRound(4, "judge",
     "Classify all ideas as JSON. Output ONLY the JSON array, no preamble.",
     context,
-    { maxTokens: 2500, temperature: 0.2 }
+    { maxTokens: 2000, temperature: 0.2 } // Reduced from 2500
   );
 
   // Parse results
